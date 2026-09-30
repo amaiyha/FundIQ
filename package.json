@@ -1,0 +1,27 @@
+{
+  "name": "fundiq",
+  "version": "1.0.0",
+  "description": "FundIQ - AI-powered financial organizer for CMPS 4200 HCI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "spike": "node technical-spike.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amaiyha/FundIQ.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/amaiyha/FundIQ/issues"
+  },
+  "homepage": "https://github.com/amaiyha/FundIQ#readme",
+  "dependencies": {
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "openai": "^7.25.0"
+  }
+}

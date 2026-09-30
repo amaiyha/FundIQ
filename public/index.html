@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>FundIQ - AI Financial Organizer</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <div class="container">
+            <h1>FundIQ</h1>
+            <p>Organize your money with AI</p>
+        </div>
+    </header>
+
+
+    <main class="container">
+
+        <!-- MONEY FORM -->
+
+        <section class="card">
+
+            <h2>Let's Organize Your Money</h2>
+
+            <p>
+                Enter your financial information below and FundIQ
+                will create a suggested plan for you.
+            </p>
+
+
+            <form id="moneyForm">
+
+                <label for="amountReceived">
+                    How much money did you receive?
+                </label>
+
+                <input
+                    type="number"
+                    id="amountReceived"
+                    placeholder="Example: 1000"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+
+                <label for="bills">
+                    How much do you need for bills?
+                </label>
+
+                <input
+                    type="number"
+                    id="bills"
+                    placeholder="Example: 400"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+
+                <label for="savingsGoal">
+                    How much would you like to save?
+                </label>
+
+                <input
+                    type="number"
+                    id="savingsGoal"
+                    placeholder="Example: 200"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+
+                <button
+                    type="submit"
+                    id="organizeButton"
+                >
+                    Organize My Money
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- STATUS -->
+
+        <section
+            id="statusSection"
+            class="card hidden"
+        >
+
+            <p id="statusMessage"></p>
+
+        </section>
+
+
+        <!-- RESULTS -->
+
+        <section
+            id="resultSection"
+            class="card hidden"
+        >
+
+            <h2>Your FundIQ Plan</h2>
+
+            <p id="explanationResult"></p>
+
+
+            <div class="allocation-grid">
+
+
+                <div class="allocation">
+
+                    <h3>Bills</h3>
+
+                    <p id="billsResult">
+                        $0.00
+                    </p>
+
+                </div>
+
+
+                <div class="allocation">
+
+                    <h3>Spending</h3>
+
+                    <p id="spendingResult">
+                        $0.00
+                    </p>
+
+                </div>
+
+
+                <div class="allocation">
+
+                    <h3>Savings</h3>
+
+                    <p id="savingsResult">
+                        $0.00
+                    </p>
+
+                </div>
+
+
+            </div>
+
+
+            <div class="buttons">
+
+                <button
+                    type="button"
+                    id="editButton"
+                >
+                    Edit
+                </button>
+
+
+                <button
+                    type="button"
+                    id="regenerateButton"
+                >
+                    Regenerate
+                </button>
+
+
+                <button
+                    type="button"
+                    id="acceptButton"
+                >
+                    Accept Plan
+                </button>
+
+
+                <button
+                    type="button"
+                    id="rejectButton"
+                >
+                    Reject
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- ACCEPTED -->
+
+        <section
+            id="acceptedSection"
+            class="card hidden"
+        >
+
+            <h2>Plan Accepted</h2>
+
+            <p>
+                Your FundIQ suggestion has been accepted.
+            </p>
+
+            <button
+                type="button"
+                id="newPlanButton"
+            >
+                Create New Plan
+            </button>
+
+        </section>
+
+
+        <!-- REJECTED -->
+
+        <section
+            id="rejectedSection"
+            class="card hidden"
+        >
+
+            <h2>Plan Rejected</h2>
+
+            <p>
+                You can create another plan whenever you're ready.
+            </p>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+
+        <p>
+            FundIQ • AI-Powered Financial Organization
+        </p>
+
+    </footer>
+
+
+    <script src="app.js"></script>
+
+</body>
+</html>
