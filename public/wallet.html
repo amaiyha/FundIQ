@@ -5,15 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FundIQ - Wallet</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/calendar.css">
 </head>
 
 <body>
 
     <nav class="navbar">
 
-        <div class="nav-logo">
-            FundIQ
-        </div>
+       <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
+        <img
+            src="/assets/fundiq-logo.png" alt="FundIQ Home">
+        </a>
 
         <div class="nav-links">
             <a href="home.html">Home</a>
@@ -72,8 +75,12 @@
 
         <div class="wallet-actions">
 
-            <button onclick="addMoney()">
+            <button type="button" onclick="addMoney()">
                 Add Money
+            </button>
+
+            <button type="button" id="clearWalletBtn" class="card-button clear-wallet-btn" onclick="promptClearWallet()">
+                Clear Wallet
             </button>
 
             <a href="sorter.html" class="card-button">
@@ -82,9 +89,36 @@
 
         </div>
 
+        <div id="walletNotice" class="auth-success-msg" style="display:none; max-width:600px; margin:24px auto 0;" role="status"></div>
+
     </main>
 
+    <!-- Clear Wallet Confirmation Modal -->
+    <div id="clearWalletModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="clearWalletTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="clearWalletTitle">⚠️ Clear Wallet Balances</h3>
+            </div>
+            <div class="fiq-modal-body">
+                <p>Are you sure you want to clear your wallet balances? This will reset your <strong>Bills</strong>, <strong>Spending</strong>, and <strong>Savings</strong> balances to <strong>$0.00</strong>.</p>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 13.5px; line-height: 1.5;">
+                    <div>✓ Your <strong>Calendar events</strong> and <strong>recurring payments</strong> will remain completely intact.</div>
+                    <div>✓ Your <strong>payment completion history</strong> is preserved.</div>
+                </div>
+                <p style="font-size: 13px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; padding: 10px; border-radius: 8px;">
+                    ⚠️ <strong>Reminder:</strong> Clearing your balances while you have upcoming scheduled payments may leave those payments with insufficient funds until you replenish your wallet.
+                </p>
+            </div>
+            <div class="fiq-modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeClearWalletModal()">Cancel</button>
+                <button type="button" class="btn-danger" id="confirmClearWalletBtn" onclick="executeClearWallet()">Confirm & Clear Wallet</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/wallet.js"></script>
+    <script src="js/nav.js" defer></script>
+    <script src="js/chat.js" defer></script>
 
 </body>
 </html>

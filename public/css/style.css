@@ -187,3 +187,87 @@ button:hover,
         grid-template-columns: 1fr;
     }
 }
+
+/* --------------------------------------------------------------------------
+   Auth & Notification Utilities
+   -------------------------------------------------------------------------- */
+.auth-error-msg {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13.5px;
+    line-height: 1.4;
+}
+
+.auth-success-msg {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13.5px;
+    line-height: 1.4;
+}
+
+.auth-switch {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 14px;
+    color: #666666;
+}
+
+.auth-switch a {
+    color: #222222;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.auth-switch a:hover {
+    color: #000000;
+}
+
+.field-hint {
+    display: block;
+    font-size: 11.5px;
+    color: #64748b;
+    margin-top: 4px;
+}
+
+.wallet-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 30px;
+}
+
+.clear-wallet-btn {
+    background: #dc2626 !important;
+    color: #ffffff !important;
+}
+
+.clear-wallet-btn:hover {
+    background: #b91c1c !important;
+    opacity: 1 !important;
+}
+
+
+/* Logo above login and registration forms */
+.auth-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto 24px;
+}
+
+.auth-logo img {
+  display: block;
+  width: 100%;
+  max-width: 210px;
+  height: auto;
+  object-fit: contain;
+}

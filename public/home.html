@@ -5,15 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FundIQ - Home</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/calendar.css">
 </head>
 
 <body>
 
     <nav class="navbar">
 
-        <div class="nav-logo">
-            FundIQ
-        </div>
+        
+    <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
+        <img src="/assets/fundiq-logo.png" alt="FundIQ" >
+    </a>
 
         <div class="nav-links">
             <a href="home.html">Home</a>
@@ -38,47 +41,88 @@
 
         </section>
 
-        <section class="description-card">
+        <!-- =============================================================
+             INTERACTIVE CALENDAR & UPCOMING PAYMENTS DASHBOARD
+             ============================================================= -->
+        <section class="calendar-payments-section">
 
-            <h2>What is FundIQ?</h2>
-
-            <p>
-                FundIQ helps you organize your money into bills,
-                spending, and savings. Use the Money Sorter to create
-                a suggested plan for your available money and use your
-                Wallet to keep track of your financial categories.
-            </p>
-
-        </section>
-
-        <section class="home-cards">
-
-            <div class="home-card">
-
-                <h2>💰 Wallet</h2>
-
-                <p>
-                    Keep track of your bills, spending, and savings.
-                </p>
-
-                <a href="wallet.html" class="card-button">
-                    View Wallet
-                </a>
-
+            <div class="calendar-section-header">
+                <h2>Payment Calendar & Scheduled Cash Flow</h2>
+                <p>Track upcoming payments, manage recurring expenses, and stay on top of your wallet balances.</p>
             </div>
 
-            <div class="home-card">
+            <!-- Live Wallet Balance Bar -->
+            <div class="calendar-wallet-bar" aria-label="Wallet Overview">
+                <div class="wallet-bar-item">
+                    <span class="wallet-bar-label">Total Balance</span>
+                    <span id="calWalletTotal" class="wallet-bar-val">$0.00</span>
+                </div>
+                <div class="wallet-bar-item">
+                    <span class="wallet-bar-label">🧾 Bills</span>
+                    <span id="calWalletBills" class="wallet-bar-val bills">$0.00</span>
+                </div>
+                <div class="wallet-bar-item">
+                    <span class="wallet-bar-label">🛍️ Spending</span>
+                    <span id="calWalletSpending" class="wallet-bar-val spending">$0.00</span>
+                </div>
+                <div class="wallet-bar-item">
+                    <span class="wallet-bar-label">💰 Savings</span>
+                    <span id="calWalletSavings" class="wallet-bar-val savings">$0.00</span>
+                </div>
+            </div>
 
-                <h2>🤖 Money Sorter</h2>
+            <!-- Side-by-Side Calendar (Left) & Upcoming Payments (Right) -->
+            <div class="calendar-payments-grid">
 
-                <p>
-                    Let FundIQ create a suggested organization plan
-                    for your money.
-                </p>
+                <!-- Left Column: Calendar Card -->
+                <div class="calendar-card">
+                    <div class="calendar-header">
+                        <h3 id="calMonthTitle" class="calendar-month-title">Month Year</h3>
+                        <div class="calendar-nav-group">
+                            <button type="button" id="calPrevMonth" class="cal-nav-btn" aria-label="Previous month">◀ Prev</button>
+                            <button type="button" id="calTodayBtn" class="cal-today-btn" aria-label="Go to today">Today</button>
+                            <button type="button" id="calNextMonth" class="cal-nav-btn" aria-label="Next month">Next ▶</button>
+                        </div>
+                    </div>
 
-                <a href="sorter.html" class="card-button">
-                    Organize My Money
-                </a>
+                    <div class="calendar-days-header" aria-hidden="true">
+                        <div>Sun</div>
+                        <div>Mon</div>
+                        <div>Tue</div>
+                        <div>Wed</div>
+                        <div>Thu</div>
+                        <div>Fri</div>
+                        <div>Sat</div>
+                    </div>
+
+                    <div id="calendarGrid" class="calendar-grid" role="grid" aria-label="Monthly payment calendar"></div>
+
+                    <!-- Selected Day Summary -->
+                    <div id="selectedDateDetail" class="selected-date-detail"></div>
+                </div>
+
+                <!-- Right Column: Upcoming Payments Card -->
+                <div class="upcoming-card">
+                    <div class="upcoming-card-header">
+                        <h2>Upcoming Payments</h2>
+                        <button type="button" id="upcomingAddPaymentBtn" class="add-payment-btn">
+                            + Add Payment
+                        </button>
+                    </div>
+
+                    <!-- Filter Tabs -->
+                    <div class="payments-filter-bar" role="tablist" aria-label="Payment Filters">
+                        <button type="button" class="filter-chip active" data-filter="all">All</button>
+                        <button type="button" class="filter-chip" data-filter="unpaid">Unpaid</button>
+                        <button type="button" class="filter-chip" data-filter="bills">Bills</button>
+                        <button type="button" class="filter-chip" data-filter="spending">Spending</button>
+                        <button type="button" class="filter-chip" data-filter="savings">Savings</button>
+                        <button type="button" class="filter-chip" data-filter="completed">Completed</button>
+                    </div>
+
+                    <!-- Scrollable Payment Items List -->
+                    <div id="upcomingPaymentsList" class="payments-list" role="region" aria-live="polite"></div>
+                </div>
 
             </div>
 
@@ -86,7 +130,92 @@
 
     </main>
 
+    <!-- Add / Edit Payment Modal -->
+    <div id="fiqPaymentModalBackdrop" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fiqPaymentModalTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="fiqPaymentModalTitle">Add Scheduled Payment</h3>
+                <button type="button" id="paymentModalClose" class="btn-icon-action" aria-label="Close modal">✕</button>
+            </div>
+            <form id="fiqPaymentForm">
+                <div class="fiq-modal-body">
+                    <input type="hidden" id="paymentId">
+                    <input type="hidden" id="paymentOccurrenceId">
+
+                    <div id="completedEditWarning" style="display: none; background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 14px;">
+                        ⚠️ This payment occurrence was already completed and deducted from your wallet. Editing the amount does not retroactively change your wallet balance.
+                    </div>
+
+                    <div class="fiq-form-group">
+                        <label for="paymentTitle">Payment Name / Description *</label>
+                        <input type="text" id="paymentTitle" placeholder="e.g. Electric Bill, Rent, Car Insurance" required>
+                    </div>
+
+                    <div class="fiq-form-group">
+                        <label for="paymentAmount">Amount ($) *</label>
+                        <input type="number" id="paymentAmount" step="0.01" min="0.01" placeholder="100.00" required>
+                    </div>
+
+                    <div class="fiq-form-group">
+                        <label for="paymentDueDate">Due Date *</label>
+                        <input type="date" id="paymentDueDate" required>
+                    </div>
+
+                    <div class="fiq-form-group">
+                        <label for="paymentCategory">Wallet Category *</label>
+                        <select id="paymentCategory" required>
+                            <option value="bills">🧾 Bills (Recurring obligations)</option>
+                            <option value="spending">🛍️ Spending (Discretionary)</option>
+                            <option value="savings">💰 Savings (Goal deposits)</option>
+                        </select>
+                    </div>
+
+                    <div class="fiq-form-group">
+                        <label for="paymentRecurrence">Recurrence Frequency *</label>
+                        <select id="paymentRecurrence" required>
+                            <option value="none">One-time payment</option>
+                            <option value="weekly">Weekly (every 7 days)</option>
+                            <option value="biweekly">Every two weeks (14 days)</option>
+                            <option value="monthly">Monthly (same day of month)</option>
+                            <option value="yearly">Yearly (annual)</option>
+                        </select>
+                    </div>
+
+                    <div id="recurrenceScopeGroup" class="fiq-form-group" style="display: none; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <label style="margin-bottom: 6px;">Apply Edit Scope:</label>
+                        <label style="display: block; font-weight: normal; font-size: 13px; margin-bottom: 6px;">
+                            <input type="radio" name="editScope" id="scopeOccurrence" value="occurrence" checked>
+                            This occurrence only
+                        </label>
+                        <label style="display: block; font-weight: normal; font-size: 13px; margin-bottom: 0;">
+                            <input type="radio" name="editScope" id="scopeSeries" value="series">
+                            Entire recurring series
+                        </label>
+                    </div>
+                </div>
+                <div class="fiq-modal-footer">
+                    <button type="button" id="paymentModalCancel" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Alert / Insufficient Funds / Delete Modal -->
+    <div id="fiqAlertModalBackdrop" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fiqAlertTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="fiqAlertTitle">Notice</h3>
+            </div>
+            <div id="fiqAlertBody" class="fiq-modal-body"></div>
+            <div id="fiqAlertFooter" class="fiq-modal-footer"></div>
+        </div>
+    </div>
+
     <script src="js/home.js"></script>
+    <script src="js/nav.js" defer></script>
+    <script src="js/calendar.js" defer></script>
+    <script src="js/chat.js" defer></script>
 
 </body>
 </html>

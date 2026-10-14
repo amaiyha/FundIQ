@@ -376,6 +376,12 @@ acceptButton.addEventListener("click", function () {
         JSON.stringify(wallet)
     );
 
+    fetch("/api/wallet", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(wallet)
+    }).catch(() => {});
+
     showStatus(`
         <strong>Plan accepted!</strong>
         <p>
