@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FundIQ - Wallet</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <nav class="navbar">
+
+        <div class="nav-logo">
+            FundIQ
+        </div>
+
+        <div class="nav-links">
+            <a href="home.html">Home</a>
+            <a href="wallet.html">Wallet</a>
+            <a href="sorter.html">Money Sorter</a>
+            <a href="index.html">Logout</a>
+        </div>
+
+    </nav>
+
+    <main class="page-container">
+
+        <h1>My Wallet</h1>
+
+        <p>
+            Keep track of how your money is organized.
+        </p>
+
+        <section class="wallet-total">
+
+            <h2>Total Money</h2>
+
+            <div id="totalAmount">
+                $0.00
+            </div>
+
+        </section>
+
+        <section class="wallet-grid">
+
+            <div class="wallet-card bills">
+
+                <h2>🧾 Bills</h2>
+
+                <p id="billsAmount">$0.00</p>
+
+            </div>
+
+            <div class="wallet-card spending">
+
+                <h2>🛍️ Spending</h2>
+
+                <p id="spendingAmount">$0.00</p>
+
+            </div>
+
+            <div class="wallet-card savings">
+
+                <h2>💰 Savings</h2>
+
+                <p id="savingsAmount">$0.00</p>
+
+            </div>
+
+        </section>
+
+        <div class="wallet-actions">
+
+            <button onclick="addMoney()">
+                Add Money
+            </button>
+
+            <a href="sorter.html" class="card-button">
+                Organize My Money
+            </a>
+
+        </div>
+
+    </main>
+
+    <script src="js/wallet.js"></script>
+
+</body>
+</html>

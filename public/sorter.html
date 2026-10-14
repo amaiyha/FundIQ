@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FundIQ - Money Sorter</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <nav class="navbar">
+
+        <div class="nav-logo">
+            FundIQ
+        </div>
+
+        <div class="nav-links">
+            <a href="home.html">Home</a>
+            <a href="wallet.html">Wallet</a>
+            <a href="sorter.html">Money Sorter</a>
+            <a href="index.html">Logout</a>
+        </div>
+
+    </nav>
+
+    <main class="page-container">
+
+        <section class="sorter-header">
+
+            <h1>Let's Organize Your Money</h1>
+
+            <p>
+                Tell FundIQ about the money you have available,
+                and we'll create a suggested plan for you.
+            </p>
+
+        </section>
+
+        <section class="sorter-card">
+
+            <form id="moneyForm">
+
+                <label for="amountReceived">
+                    How much money did you receive?
+                </label>
+
+                <input
+                    type="number"
+                    id="amountReceived"
+                    placeholder="1000"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+                <label for="bills">
+                    How much do you need for bills?
+                </label>
+
+                <input
+                    type="number"
+                    id="bills"
+                    placeholder="400"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+                <label for="savingsGoal">
+                    How much would you like to save?
+                </label>
+
+                <input
+                    type="number"
+                    id="savingsGoal"
+                    placeholder="200"
+                    min="0"
+                    step="0.01"
+                    required
+                >
+
+                <button type="submit" id="organizeButton">
+                    Let's Organize My Money
+                </button>
+
+            </form>
+
+        </section>
+
+        <section id="statusSection" class="status-section">
+            <p id="statusMessage"></p>
+        </section>
+
+        <section id="resultSection" class="result-section">
+
+            <h2>Your Suggested Plan</h2>
+
+            <div class="result-grid">
+
+                <div class="result-card">
+                    <h3>🧾 Bills</h3>
+                    <p id="billsResult">$0.00</p>
+                </div>
+
+                <div class="result-card">
+                    <h3>🛍️ Spending</h3>
+                    <p id="spendingResult">$0.00</p>
+                </div>
+
+                <div class="result-card">
+                    <h3>💰 Savings</h3>
+                    <p id="savingsResult">$0.00</p>
+                </div>
+
+            </div>
+
+            <div class="explanation">
+
+                <h3>Why FundIQ Suggested This</h3>
+
+                <p id="explanationResult"></p>
+
+            </div>
+
+                    <div class="result-buttons">
+
+            <button type="button" id="editButton">
+                Edit Information
+            </button>
+
+            <button type="button" id="regenerateButton">
+                Regenerate Plan
+            </button>
+
+            <button type="button" id="acceptButton">
+                Accept Plan
+            </button>
+
+            <button type="button" id="rejectButton">
+                Reject Plan
+            </button>
+
+        </div>
+
+    </section>
+
+    <script src="js/sorter.js"></script>
+
+</body>
+</html>
