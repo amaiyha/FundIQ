@@ -9,11 +9,45 @@
     // Detect if user is on the login page (unauthenticated guest mode)
     const isLoginPage =
         window.location.pathname.endsWith("index.html") ||
+        window.location.pathname.endsWith("register.html") ||
         window.location.pathname === "/" ||
         document.body.classList.contains("login-page");
 
-    // Client-side session information (untrusted local prototype storage)
-    const storedName = isLoginPage ? null : localStorage.getItem("fundiqName");
+    // Authoritative user display name synced from /api/auth/me
+    let storedName = null;
+
+    window.addEventListener("fundiq:user-loaded", (e) => {
+        if (isLoginPage) {
+            storedName = null;
+        } else if (e.detail && (e.detail.fullName || e.detail.username)) {
+            storedName = (e.detail.fullName && e.detail.fullName.trim())
+                ? e.detail.fullName.trim()
+                : e.detail.username;
+        } else {
+            storedName = null;
+        }
+        if (conversationHistory.length === 0) {
+            renderWelcomeCard();
+        }
+    });
+
+    if (!isLoginPage) {
+        fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                if (data && data.authenticated && data.user) {
+                    storedName = (data.user.fullName && data.user.fullName.trim())
+                        ? data.user.fullName.trim()
+                        : data.user.username;
+                } else {
+                    storedName = null;
+                }
+                if (conversationHistory.length === 0) {
+                    renderWelcomeCard();
+                }
+            })
+            .catch(() => {});
+    }
 
     // Chat state
     let isOpen = false;
@@ -73,9 +107,9 @@
         launcher.setAttribute("aria-haspopup", "dialog");
         launcher.setAttribute("aria-expanded", "false");
         launcher.innerHTML = `
-            <span class="fiq-launcher-icon" aria-hidden="true">🪙</span>
+            <span class="fiq-launcher-icon" aria-hidden="true">✦</span>
             <span class="fiq-launcher-label">Ask Penny</span>
-            <span class="fiq-launcher-badge" aria-hidden="true"></span>
+            <span class="fiq-launcher-badge" aria-hidden="true">1</span>
         `;
 
         // 2. Chat Panel Container
@@ -91,12 +125,12 @@
         header.className = "fiq-chat-header";
         header.innerHTML = `
             <div class="fiq-header-info">
-                <div class="fiq-header-avatar" aria-hidden="true">🪙</div>
+                <div class="fiq-header-avatar" aria-hidden="true">✦</div>
                 <div>
                     <h2 id="fiqHeaderTitle" class="fiq-header-title">Penny</h2>
                     <p class="fiq-header-sub">
                         <span class="fiq-status-dot" aria-hidden="true"></span>
-                        FundIQ Assistant
+                        FundIQ AI Assistant
                     </p>
                 </div>
             </div>
@@ -317,7 +351,7 @@
             chatWindow.setAttribute("aria-hidden", "true");
             launcher.setAttribute("aria-expanded", "false");
             launcher.querySelector(".fiq-launcher-label").textContent = "Ask Penny";
-            launcher.querySelector(".fiq-launcher-icon").textContent = "🪙";
+            launcher.querySelector(".fiq-launcher-icon").textContent = "✦";
         }
     }
 

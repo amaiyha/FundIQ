@@ -9,89 +9,323 @@
     <link rel="stylesheet" href="css/calendar.css">
 </head>
 
-<body>
+<body class="app-layout-body">
 
-    <nav class="navbar">
-
-       <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
-        <img
-            src="/assets/fundiq-logo.png" alt="FundIQ Home">
-        </a>
-
-        <div class="nav-links">
-            <a href="home.html">Home</a>
-            <a href="wallet.html">Wallet</a>
-            <a href="sorter.html">Money Sorter</a>
-            <a href="index.html">Logout</a>
-        </div>
-
-    </nav>
-
-    <main class="page-container">
-
-        <h1>My Wallet</h1>
-
-        <p>
-            Keep track of how your money is organized.
-        </p>
-
-        <section class="wallet-total">
-
-            <h2>Total Money</h2>
-
-            <div id="totalAmount">
-                $0.00
-            </div>
-
-        </section>
-
-        <section class="wallet-grid">
-
-            <div class="wallet-card bills">
-
-                <h2>🧾 Bills</h2>
-
-                <p id="billsAmount">$0.00</p>
-
-            </div>
-
-            <div class="wallet-card spending">
-
-                <h2>🛍️ Spending</h2>
-
-                <p id="spendingAmount">$0.00</p>
-
-            </div>
-
-            <div class="wallet-card savings">
-
-                <h2>💰 Savings</h2>
-
-                <p id="savingsAmount">$0.00</p>
-
-            </div>
-
-        </section>
-
-        <div class="wallet-actions">
-
-            <button type="button" onclick="addMoney()">
-                Add Money
-            </button>
-
-            <button type="button" id="clearWalletBtn" class="card-button clear-wallet-btn" onclick="promptClearWallet()">
-                Clear Wallet
-            </button>
-
-            <a href="sorter.html" class="card-button">
-                Organize My Money
+    <nav class="navbar sidebar-nav" aria-label="Main Navigation">
+        <div class="sidebar-top">
+            <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
+                <img src="/assets/fundiq-logo.png" alt="FundIQ Home">
             </a>
 
+            <div class="nav-links">
+                <a href="home.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+                    </span>
+                    <span>Home</span>
+                </a>
+                <a href="wallet.html" class="nav-item active">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h.01"/></svg>
+                    </span>
+                    <span>Wallet</span>
+                </a>
+                <a href="sorter.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    </span>
+                    <span>Money sorter</span>
+                    <span class="nav-ai-badge">AI</span>
+                </a>
+                <a href="profile.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </span>
+                    <span>Profile</span>
+                </a>
+                <a href="index.html" class="nav-item nav-logout-hidden">Logout</a>
+            </div>
         </div>
 
-        <div id="walletNotice" class="auth-success-msg" style="display:none; max-width:600px; margin:24px auto 0;" role="status"></div>
+        <div class="sidebar-bottom">
+            <div class="sidebar-insight-card">
+                <div class="insight-icon-box" aria-hidden="true">✦</div>
+                <div class="insight-title">Weekly insight</div>
+                <div class="insight-text">You spent 12% less on dining this week.</div>
+            </div>
+
+            <a href="profile.html" class="sidebar-user-card" title="View Profile &amp; Financial Connections">
+                <span class="sidebar-avatar js-user-initials">FI</span>
+                <span class="sidebar-user-info">
+                    <strong class="js-user-name">FundIQ Member</strong>
+                    <small class="js-user-email"></small>
+                </span>
+                <span class="sidebar-chevron" aria-hidden="true">›</span>
+            </a>
+
+            <a href="index.html" class="sidebar-logout-btn js-logout-link">
+                <span aria-hidden="true">↪</span>
+                <span>Log out</span>
+            </a>
+        </div>
+    </nav>
+
+    <main class="page-container app-main">
+
+        <!-- =============================================================
+             YOUR WALLET ("Every dollar has a place.")
+             ============================================================= -->
+        <section id="yourWalletSection" class="dashboard-top-bar">
+            <div>
+                <span class="fiq-eyebrow">YOUR WALLET</span>
+                <h1>Every dollar has a place.</h1>
+                <p class="welcome-text">
+                    Split your balance into simple buckets, then make them your own.
+                </p>
+            </div>
+            <div class="dashboard-top-actions wallet-actions">
+                <button type="button" class="btn-purple-pill" onclick="addMoney()">
+                    + Add money
+                </button>
+                <a href="profile.html" class="btn-outline-pill card-button">
+                    🏦 Manage Connections
+                </a>
+                <a href="sorter.html" class="btn-outline-pill card-button">
+                    Organize My Money
+                </a>
+                <button type="button" id="clearWalletBtn" class="btn-outline-danger clear-wallet-btn" onclick="promptClearWallet()">
+                    Clear Wallet
+                </button>
+            </div>
+        </section>
+
+        <!-- Dark Hero Total Balance Banner (Figma Reference) -->
+        <section class="wallet-total wallet-hero-card">
+            <div class="wallet-hero-top">
+                <div>
+                    <span class="wallet-hero-label">Total balance</span>
+                    <div id="totalAmount">$0.00</div>
+                    <div class="wallet-hero-updated">Updated just now</div>
+                </div>
+                <div id="totalBreakdown" class="wallet-balance-breakdown">
+                    <span class="breakdown-pill manual-pill">✍️ Manual Wallet: <strong id="totalManualAmount">$0.00</strong></span>
+                    <span class="breakdown-pill bank-pill">🏦 Live Bank (Mapped): <strong id="totalBankAmount">$0.00</strong></span>
+                </div>
+            </div>
+
+            <!-- Proportional Progress Bar -->
+            <div class="wallet-progress-track" aria-label="Wallet category breakdown bar">
+                <div id="barSegSavings" class="wallet-progress-seg seg-savings" style="width: 34%;"></div>
+                <div id="barSegBills" class="wallet-progress-seg seg-bills" style="width: 33%;"></div>
+                <div id="barSegSpending" class="wallet-progress-seg seg-spending" style="width: 33%;"></div>
+            </div>
+
+            <div class="wallet-progress-legend">
+                <span class="legend-stat"><i class="dot-savings"></i> Savings <strong id="pctSavings">0%</strong></span>
+                <span class="legend-stat"><i class="dot-bills"></i> Bills <strong id="pctBills">0%</strong></span>
+                <span class="legend-stat"><i class="dot-spending"></i> Spending <strong id="pctSpending">0%</strong></span>
+            </div>
+        </section>
+
+        <div id="walletNotice" class="auth-success-msg" style="display:none; margin: 18px 0;" role="status"></div>
+
+        <!-- Three Bucket Cards Grid (Savings, Bills, Spending matching Figma layout) -->
+        <section class="wallet-grid">
+
+            <!-- Bucket 1: Savings -->
+            <div class="wallet-card savings">
+                <div class="bucket-card-header">
+                    <div class="bucket-title-group">
+                        <div class="bucket-icon-box" aria-hidden="true">✦</div>
+                        <div>
+                            <h2>Savings</h2>
+                            <p id="savingsAmount">$0.00</p>
+                            <div class="wallet-cat-subtitle">For your future · Rainy Day</div>
+                        </div>
+                    </div>
+                    <button type="button" class="bucket-plus-btn" title="Add sub-category to Savings" onclick="addBucketSubItem('savings')">+</button>
+                </div>
+
+                <div class="wallet-source-breakdown">
+                    <div class="source-row">
+                        <span>✍️ Manual Entry:</span>
+                        <strong id="savingsManualAmount">$0.00</strong>
+                    </div>
+                    <div class="source-row bank-row">
+                        <span>🏦 Live Bank (Savings):</span>
+                        <strong id="savingsBankAmount">$0.00</strong>
+                    </div>
+                </div>
+
+                <div id="subList_savings" class="bucket-sub-list"></div>
+
+                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('savings')">+ Add sub-category</button>
+            </div>
+
+            <!-- Bucket 2: Bills -->
+            <div class="wallet-card bills">
+                <div class="bucket-card-header">
+                    <div class="bucket-title-group">
+                        <div class="bucket-icon-box" aria-hidden="true">📅</div>
+                        <div>
+                            <h2>Bills</h2>
+                            <p id="billsAmount">$0.00</p>
+                            <div class="wallet-cat-subtitle">Ready for essentials · Checking</div>
+                        </div>
+                    </div>
+                    <button type="button" class="bucket-plus-btn" title="Add sub-category to Bills" onclick="addBucketSubItem('bills')">+</button>
+                </div>
+
+                <div class="wallet-source-breakdown">
+                    <div class="source-row">
+                        <span>✍️ Manual Entry:</span>
+                        <strong id="billsManualAmount">$0.00</strong>
+                    </div>
+                    <div class="source-row bank-row">
+                        <span>🏦 Live Bank (Checking):</span>
+                        <strong id="billsBankAmount">$0.00</strong>
+                    </div>
+                </div>
+
+                <div id="subList_bills" class="bucket-sub-list"></div>
+
+                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('bills')">+ Add sub-category</button>
+
+                <!-- Detected Recurring Bills from Connected Bank Accounts & Payment History -->
+                <div id="billsDetectedRecurringWrap" class="wallet-detected-bills-box" style="display:none; margin-top: 14px; padding-top: 14px; border-top: 1px solid #F3F4F6;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+                        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6D28D9;">
+                            🔮 Detected Recurring Bills
+                        </span>
+                        <a href="home.html" style="font-size: 11.5px; font-weight: 600; color: #6D28D9; text-decoration: none;">View Calendar ›</a>
+                    </div>
+                    <div id="billsDetectedRecurringList" class="detected-bills-mini-list"></div>
+                </div>
+            </div>
+
+            <!-- Bucket 3: Spending -->
+            <div class="wallet-card spending">
+                <div class="bucket-card-header">
+                    <div class="bucket-title-group">
+                        <div class="bucket-icon-box" aria-hidden="true">💳</div>
+                        <div>
+                            <h2>Spending</h2>
+                            <p id="spendingAmount">$0.00</p>
+                            <div class="wallet-cat-subtitle">Yours to enjoy · Discretionary</div>
+                        </div>
+                    </div>
+                    <button type="button" class="bucket-plus-btn" title="Add money to Spending" onclick="addMoney()">+</button>
+                </div>
+
+                <div class="wallet-source-breakdown">
+                    <div class="source-row">
+                        <span>✍️ Manual Entry:</span>
+                        <strong id="spendingManualAmount">$0.00</strong>
+                    </div>
+                    <div class="source-row muted-row">
+                        <span>🏦 Live Bank:</span>
+                        <span>Discretionary Only</span>
+                    </div>
+                </div>
+
+                <div id="subList_spending" class="bucket-sub-list"></div>
+
+                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('spending')">+ Add sub-category</button>
+            </div>
+
+        </section>
 
     </main>
+
+    <!-- Add / Edit Subcategory Modal -->
+    <div id="subcategoryModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="subcategoryModalTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="subcategoryModalTitle">Edit Sub-category</h3>
+                <button type="button" class="cal-modal-close" aria-label="Close modal" onclick="closeSubcategoryModal()">&times;</button>
+            </div>
+            <form id="subcategoryForm" onsubmit="handleSubcategoryFormSubmit(event)">
+                <div class="fiq-modal-body">
+                    <input type="hidden" id="subcatIdInput" value="">
+                    <input type="hidden" id="subcatBucketInput" value="savings">
+
+                    <div class="cal-form-group" style="margin-bottom: 14px;">
+                        <label for="subcatNameInput">Sub-category Name</label>
+                        <input type="text" id="subcatNameInput" placeholder="e.g., Emergency fund" maxlength="60" required>
+                    </div>
+
+                    <div class="cal-form-group" style="margin-bottom: 10px;">
+                        <label for="subcatAmountInput">Allocated Balance ($)</label>
+                        <input type="number" id="subcatAmountInput" step="0.01" min="0" placeholder="0.00" required>
+                        <small class="field-hint">Updating a sub-category name or target allocation preserves your main Wallet bucket balances.</small>
+                    </div>
+
+                    <div id="subcategoryFormError" class="cal-form-error" style="display:none;" role="alert"></div>
+                </div>
+                <div class="fiq-modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeSubcategoryModal()">Cancel</button>
+                    <button type="submit" id="saveSubcategoryBtn" class="btn-purple-pill">Save Sub-category</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Detected Bill Modal (for Bills category on Wallet page) -->
+    <div id="editDetectedBillModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editDetectedBillTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="editDetectedBillTitle">Edit Predicted Bill</h3>
+                <button type="button" class="cal-modal-close" aria-label="Close modal" onclick="closeEditDetectedBillModal()">&times;</button>
+            </div>
+            <form id="editDetectedBillForm" onsubmit="handleEditDetectedBillSubmit(event)">
+                <div class="fiq-modal-body">
+                    <input type="hidden" id="detectedBillIdInput" value="">
+
+                    <div class="cal-form-group" style="margin-bottom: 12px;">
+                        <label for="detectedBillNameInput">Bill Name</label>
+                        <input type="text" id="detectedBillNameInput" maxlength="80" required>
+                    </div>
+
+                    <div class="cal-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom: 12px;">
+                        <div class="cal-form-group">
+                            <label for="detectedBillAmountInput">Expected Amount ($)</label>
+                            <input type="number" id="detectedBillAmountInput" step="0.01" min="0.01" required>
+                        </div>
+                        <div class="cal-form-group">
+                            <label for="detectedBillDueDateInput">Next Due Date</label>
+                            <input type="date" id="detectedBillDueDateInput" required>
+                        </div>
+                    </div>
+
+                    <div class="cal-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom: 10px;">
+                        <div class="cal-form-group">
+                            <label for="detectedBillFreqInput">Recurrence Frequency</label>
+                            <select id="detectedBillFreqInput">
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly (Every 2 weeks)</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="yearly">Yearly</option>
+                            </select>
+                        </div>
+                        <div class="cal-form-group">
+                            <label for="detectedBillCategoryInput">Wallet Bucket</label>
+                            <select id="detectedBillCategoryInput">
+                                <option value="bills">Bills</option>
+                                <option value="spending">Spending</option>
+                                <option value="savings">Savings</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="editDetectedBillError" class="cal-form-error" style="display:none;" role="alert"></div>
+                </div>
+                <div class="fiq-modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeEditDetectedBillModal()">Cancel</button>
+                    <button type="submit" class="btn-purple-pill">Save &amp; Confirm on Calendar</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Clear Wallet Confirmation Modal -->
     <div id="clearWalletModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="clearWalletTitle">
@@ -100,18 +334,19 @@
                 <h3 id="clearWalletTitle">⚠️ Clear Wallet Balances</h3>
             </div>
             <div class="fiq-modal-body">
-                <p>Are you sure you want to clear your wallet balances? This will reset your <strong>Bills</strong>, <strong>Spending</strong>, and <strong>Savings</strong> balances to <strong>$0.00</strong>.</p>
+                <p>Are you sure you want to clear your manual wallet balances? This will reset your manual <strong>Bills</strong>, <strong>Spending</strong>, and <strong>Savings</strong> balances to <strong>$0.00</strong>.</p>
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 13.5px; line-height: 1.5;">
                     <div>✓ Your <strong>Calendar events</strong> and <strong>recurring payments</strong> will remain completely intact.</div>
                     <div>✓ Your <strong>payment completion history</strong> is preserved.</div>
+                    <div>✓ Your <strong>connected bank accounts</strong> remain intact unless disconnected separately.</div>
                 </div>
                 <p style="font-size: 13px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; padding: 10px; border-radius: 8px;">
-                    ⚠️ <strong>Reminder:</strong> Clearing your balances while you have upcoming scheduled payments may leave those payments with insufficient funds until you replenish your wallet.
+                    ⚠️ <strong>Reminder:</strong> Clearing your manual balances while you have upcoming scheduled payments may leave those payments with insufficient manual funds until you replenish your wallet.
                 </p>
             </div>
             <div class="fiq-modal-footer">
                 <button type="button" class="btn-secondary" onclick="closeClearWalletModal()">Cancel</button>
-                <button type="button" class="btn-danger" id="confirmClearWalletBtn" onclick="executeClearWallet()">Confirm & Clear Wallet</button>
+                <button type="button" class="btn-danger" id="confirmClearWalletBtn" onclick="executeClearWallet()">Confirm &amp; Clear Wallet</button>
             </div>
         </div>
     </div>

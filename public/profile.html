@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FundIQ - Profile &amp; Connections</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/calendar.css">
+</head>
+
+<body class="app-layout-body">
+
+    <nav class="navbar sidebar-nav" aria-label="Main Navigation">
+        <div class="sidebar-top">
+            <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
+                <img src="/assets/fundiq-logo.png" alt="FundIQ Home">
+            </a>
+
+            <div class="nav-links">
+                <a href="home.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+                    </span>
+                    <span>Home</span>
+                </a>
+                <a href="wallet.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h.01"/></svg>
+                    </span>
+                    <span>Wallet</span>
+                </a>
+                <a href="sorter.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    </span>
+                    <span>Money sorter</span>
+                    <span class="nav-ai-badge">AI</span>
+                </a>
+                <a href="profile.html" class="nav-item active">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </span>
+                    <span>Profile</span>
+                </a>
+                <a href="index.html" class="nav-item nav-logout-hidden">Logout</a>
+            </div>
+        </div>
+
+        <div class="sidebar-bottom">
+            <div class="sidebar-insight-card">
+                <div class="insight-icon-box" aria-hidden="true">✦</div>
+                <div class="insight-title">Weekly insight</div>
+                <div class="insight-text">You spent 12% less on dining this week.</div>
+            </div>
+
+            <a href="profile.html" class="sidebar-user-card" title="View Profile &amp; Financial Connections">
+                <span class="sidebar-avatar js-user-initials">FI</span>
+                <span class="sidebar-user-info">
+                    <strong class="js-user-name">FundIQ Member</strong>
+                    <small class="js-user-email"></small>
+                </span>
+                <span class="sidebar-chevron" aria-hidden="true">›</span>
+            </a>
+
+            <a href="index.html" class="sidebar-logout-btn js-logout-link">
+                <span aria-hidden="true">↪</span>
+                <span>Log out</span>
+            </a>
+        </div>
+    </nav>
+
+    <main class="page-container app-main">
+
+        <!-- =============================================================
+             PROFILE & CONNECTIONS ("Your financial connections.")
+             ============================================================= -->
+        <section id="bankConnectionSection" class="plaid-bank-section connections-section" style="margin-top: 0; padding-top: 0; border-top: none;" aria-labelledby="plaidSectionTitle">
+
+            <div class="dashboard-top-bar connections-top-bar">
+                <div>
+                    <span class="fiq-eyebrow">PROFILE &amp; CONNECTIONS</span>
+                    <h1 id="plaidSectionTitle" class="connections-main-title">Your financial connections.</h1>
+                    <p class="plaid-subtitle">
+                        View the accounts that keep FundIQ organized and up to date.
+                    </p>
+                </div>
+                <div class="plaid-header-actions">
+                    <button type="button" id="connectBankBtn" class="btn-purple-pill plaid-connect-btn" onclick="openPlaidLink()">
+                        + Add account
+                    </button>
+                    <button type="button" id="refreshBankBtn" class="btn-outline-pill" onclick="refreshBankBalances()" style="display:none;">
+                        🔄 Refresh Balances
+                    </button>
+                    <button type="button" id="disconnectAllBanksBtn" class="btn-outline-danger" onclick="promptDisconnectBank(null)" style="display:none;">
+                        Disconnect All
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dark Profile & Connected Balance Banner (Figma Reference) -->
+            <div class="connections-profile-banner">
+                <div class="conn-profile-left">
+                    <div class="conn-avatar-lg js-user-initials">FI</div>
+                    <div class="conn-user-meta">
+                        <h3 class="js-user-name">FundIQ Member</h3>
+                        <p class="js-user-email"></p>
+                        <div class="conn-badges-row">
+                            <span id="plaidStatusBadge" class="plaid-status-badge disconnected">Not Connected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="conn-profile-center">
+                    <span class="conn-bal-label">Total connected balance</span>
+                    <div id="plaidBannerTotal" class="conn-bal-amount">$0.00</div>
+                    <div class="conn-updated-dot">
+                        <span class="pulse-dot"></span>
+                        <span id="plaidUpdatedLabel">Updated just now</span>
+                    </div>
+                </div>
+
+                <div class="conn-profile-right">
+                    <div class="conn-stat-box">
+                        <strong id="plaidBankCountStat">0</strong>
+                        <span>Bank accounts</span>
+                    </div>
+                    <div class="conn-stat-box">
+                        <strong id="plaidBillCountStat">0</strong>
+                        <span>Bill accounts</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="plaidRefreshState" class="plaid-refresh-state" style="display:none;"></div>
+            <div id="plaidAlertBanner" class="plaid-alert-banner" style="display:none;" role="alert"></div>
+
+            <!-- Category Quick Mapping Selector (shown when bank accounts are connected) -->
+            <div id="plaidMappingPanel" class="plaid-mapping-panel" style="display:none;">
+                <h3>Select Which Accounts Map to Your FundIQ Categories</h3>
+                <p class="plaid-mapping-hint">
+                    Checking accounts map to <strong>🧾 Bills / Checking</strong> and savings accounts map to <strong>💰 Rainy Day / Savings</strong>.
+                    <strong>🛍️ Spending</strong> remains your extra discretionary money managed via the Money Sorter or Add Money.
+                    Each connected account is counted at most once so money is never added twice.
+                </p>
+
+                <div class="plaid-mapping-grid">
+                    <div class="plaid-mapping-box bills-box">
+                        <label for="billsAccountSelect">🧾 Bills / Checking Account</label>
+                        <select id="billsAccountSelect" onchange="handleQuickCategorySelect('bills', this.value)">
+                            <option value="none">— None Mapped —</option>
+                        </select>
+                        <small class="field-hint">Maps live checking balance to FundIQ Bills.</small>
+                    </div>
+
+                    <div class="plaid-mapping-box savings-box">
+                        <label for="savingsAccountSelect">💰 Rainy Day / Savings Account</label>
+                        <select id="savingsAccountSelect" onchange="handleQuickCategorySelect('savings', this.value)">
+                            <option value="none">— None Mapped —</option>
+                        </select>
+                        <small class="field-hint">Maps live savings balance to FundIQ Rainy Day / Savings.</small>
+                    </div>
+
+                    <div class="plaid-mapping-box spending-box">
+                        <label>🛍️ Spending (Discretionary)</label>
+                        <div class="spending-static-note">
+                            Manual Wallet Balance Only
+                        </div>
+                        <small class="field-hint">Extra money available for discretionary purchases per FundIQ rules.</small>
+                    </div>
+                </div>
+
+                <div class="plaid-readonly-notice">
+                    ℹ️ <strong>Read-Only Bank Integration:</strong> Plaid retrieves your live account balances and transaction history securely. Detecting a bill or marking a scheduled payment complete on the Calendar updates your local FundIQ records only and never transfers or deducts money from your bank account.
+                </div>
+            </div>
+
+            <!-- Side-by-Side Bank Accounts & Bill Accounts Cards (Figma Reference) -->
+            <div class="connections-two-col-grid">
+
+                <!-- Left Card: Bank Accounts -->
+                <div class="conn-panel-card">
+                    <div class="conn-panel-header">
+                        <div>
+                            <h3>Bank accounts</h3>
+                            <p>Balances and transactions sync automatically</p>
+                        </div>
+                        <span id="plaidLinkedCountBadge" class="linked-count-pill">0 linked</span>
+                    </div>
+
+                    <div id="plaidAccountsContainer" class="plaid-accounts-container"></div>
+
+                    <button type="button" class="conn-add-link" onclick="openPlaidLink()">
+                        + Connect another bank
+                    </button>
+                </div>
+
+                <!-- Right Card: Bill Accounts & Recurring Bill Predictions -->
+                <div class="conn-panel-card">
+                    <div class="conn-panel-header">
+                        <div>
+                            <h3>Bill accounts</h3>
+                            <p>Recurring bills detected from your bank history &amp; payment schedule</p>
+                        </div>
+                        <span id="billLinkedCountBadge" class="linked-count-pill">0 linked</span>
+                    </div>
+
+                    <div id="walletBillAccountsList" class="conn-bills-list"></div>
+
+                    <!-- Verified Past Transactions Sub-section (clearly distinguished from Predicted future payments) -->
+                    <div id="verifiedTransactionsWrap" style="display:none; margin-top: 16px; padding-top: 14px; border-top: 1px solid #F3F4F6;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+                            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #374151;">
+                                ✓ Verified Past Bill Transactions
+                            </span>
+                            <span style="font-size: 11px; color: #6B7280;">Confirmed Bank History</span>
+                        </div>
+                        <div id="verifiedBillTransactionsList" class="conn-bills-list"></div>
+                    </div>
+
+                    <a href="home.html" class="conn-add-link">
+                        + Add or review bills on Calendar
+                    </a>
+                </div>
+
+            </div>
+
+            <!-- Email & SMS Notification Preferences Card (Profile Page Only) -->
+            <div id="emailNotificationsPanel" class="conn-panel-card email-prefs-card" style="margin-top: 20px;">
+                <div class="conn-panel-header notif-collapsible-header" id="notifPanelHeader">
+                    <div>
+                        <span class="fiq-eyebrow">NOTIFICATION SETTINGS</span>
+                        <h3>Email &amp; SMS Notification Preferences</h3>
+                        <p>Manage payment-due reminders, deposit confirmations, and payment activity alerts for <strong id="notifRecipientEmail" class="js-user-email">your account</strong>.</p>
+                    </div>
+                    <div class="notif-header-right">
+                        <span id="notifModeBadge" class="linked-count-pill">Active</span>
+                        <button
+                            type="button"
+                            id="toggleNotifPanelBtn"
+                            class="notif-collapse-btn"
+                            aria-expanded="true"
+                            aria-controls="notifPanelBody"
+                            title="Minimize notification settings"
+                        >
+                            <span id="toggleNotifPanelLabel">Minimize</span>
+                            <svg class="notif-chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="notifPanelBody" class="notif-panel-body">
+                    <form id="notificationPrefsForm" class="notif-prefs-form" style="margin-top: 16px;">
+
+                    <!-- Email Notifications Channel -->
+                    <div style="margin-bottom: 14px;">
+                        <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4B5563; margin-bottom: 10px;">
+                            📧 Email Notifications
+                        </div>
+                        <div class="notif-prefs-grid">
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefEmailEnabled" checked>
+                                <span>
+                                    <strong>Enable Email Notifications</strong>
+                                    <small class="field-hint">Receive alerts at your registered email address.</small>
+                                </span>
+                            </label>
+
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefPaymentDueEnabled" checked>
+                                <span>
+                                    <strong>Payment Due Reminders (Email)</strong>
+                                    <small class="field-hint">Notify on the due date and in advance for unpaid scheduled payments.</small>
+                                </span>
+                            </label>
+
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefDepositEnabled" checked>
+                                <span>
+                                    <strong>Deposit Confirmations (Email)</strong>
+                                    <small class="field-hint">Notify when money is deposited or sorted into your Wallet buckets.</small>
+                                </span>
+                            </label>
+
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefPaymentSubmittedEnabled" checked>
+                                <span>
+                                    <strong>Payment Activity Alerts (Email)</strong>
+                                    <small class="field-hint">Distinguishes local FundIQ Wallet completions from submitted payments.</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- SMS Notifications Channel -->
+                    <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #F3F4F6;">
+                        <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4B5563; margin-bottom: 10px;">
+                            📱 SMS / Text Message Notifications
+                        </div>
+                        <div class="notif-prefs-grid">
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefSmsEnabled">
+                                <span>
+                                    <strong>Enable SMS Notifications</strong>
+                                    <small class="field-hint">Receive text message alerts independently of email settings.</small>
+                                </span>
+                            </label>
+
+                            <div class="notif-toggle-row" style="display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:4px;">
+                                <label for="prefPhoneNumber" style="font-size:13px; font-weight:600; color:#111827; margin:0;">Mobile Phone Number (Optional)</label>
+                                <input type="tel" id="prefPhoneNumber" placeholder="e.g., (555) 234-5678" style="width:100%; padding:8px 10px; font-size:13px; border:1px solid #D1D5DB; border-radius:8px;">
+                            </div>
+
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefSmsPaymentDueEnabled" checked>
+                                <span>
+                                    <strong>Payment Due Reminders (SMS)</strong>
+                                    <small class="field-hint">Text alerts when unpaid scheduled bills are approaching or due.</small>
+                                </span>
+                            </label>
+
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="prefSmsDepositEnabled" checked>
+                                <span>
+                                    <strong>Deposit &amp; Payment Alerts (SMS)</strong>
+                                    <small class="field-hint">Text alerts for recorded deposits and payment activity.</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="notif-timing-row" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-top:16px; padding-top:14px; border-top:1px solid #F3F4F6;">
+                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <label for="prefReminderDays" style="margin:0; font-size:13px;">Advance reminder timing:</label>
+                            <select id="prefReminderDays" style="width:auto; min-width:170px; padding:8px 12px;">
+                                <option value="0">On due date only</option>
+                                <option value="1">1 day before + on due date</option>
+                                <option value="2">2 days before + on due date</option>
+                                <option value="3" selected>3 days before + on due date</option>
+                                <option value="5">5 days before + on due date</option>
+                                <option value="7">7 days before + on due date</option>
+                            </select>
+                        </div>
+
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <button type="submit" id="saveNotifPrefsBtn" class="btn-purple-pill">
+                                Save Preferences
+                            </button>
+                        </div>
+                    </div>
+                    </form>
+
+                    <div id="notifStatusBanner" class="plaid-alert-banner" style="display:none; margin-top:12px;" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Edit Detected Bill Modal -->
+    <div id="editDetectedBillModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editDetectedBillTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="editDetectedBillTitle">Edit Predicted Bill</h3>
+                <button type="button" class="cal-modal-close" aria-label="Close modal" onclick="closeEditDetectedBillModal()">&times;</button>
+            </div>
+            <form id="editDetectedBillForm" onsubmit="handleEditDetectedBillSubmit(event)">
+                <div class="fiq-modal-body">
+                    <input type="hidden" id="detectedBillIdInput" value="">
+
+                    <div class="cal-form-group" style="margin-bottom: 12px;">
+                        <label for="detectedBillNameInput">Bill Name</label>
+                        <input type="text" id="detectedBillNameInput" maxlength="80" required>
+                    </div>
+
+                    <div class="cal-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom: 12px;">
+                        <div class="cal-form-group">
+                            <label for="detectedBillAmountInput">Expected Amount ($)</label>
+                            <input type="number" id="detectedBillAmountInput" step="0.01" min="0.01" required>
+                        </div>
+                        <div class="cal-form-group">
+                            <label for="detectedBillDueDateInput">Next Due Date</label>
+                            <input type="date" id="detectedBillDueDateInput" required>
+                        </div>
+                    </div>
+
+                    <div class="cal-form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom: 10px;">
+                        <div class="cal-form-group">
+                            <label for="detectedBillFreqInput">Recurrence Frequency</label>
+                            <select id="detectedBillFreqInput">
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly (Every 2 weeks)</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="yearly">Yearly</option>
+                            </select>
+                        </div>
+                        <div class="cal-form-group">
+                            <label for="detectedBillCategoryInput">Wallet Bucket</label>
+                            <select id="detectedBillCategoryInput">
+                                <option value="bills">Bills</option>
+                                <option value="spending">Spending</option>
+                                <option value="savings">Savings</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="editDetectedBillError" class="cal-form-error" style="display:none;" role="alert"></div>
+                </div>
+                <div class="fiq-modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeEditDetectedBillModal()">Cancel</button>
+                    <button type="submit" class="btn-purple-pill">Save &amp; Confirm on Calendar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Disconnect Bank Confirmation Modal -->
+    <div id="disconnectBankModal" class="fiq-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="disconnectBankTitle">
+        <div class="fiq-modal-card">
+            <div class="fiq-modal-header">
+                <h3 id="disconnectBankTitle">🔌 Disconnect Bank Account</h3>
+            </div>
+            <div class="fiq-modal-body">
+                <p id="disconnectBankPromptText">Are you sure you want to disconnect this bank connection from FundIQ?</p>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 13.5px; line-height: 1.5;">
+                    <div>✓ Plaid access token will be revoked and removed from the server database.</div>
+                    <div>✓ Your <strong>manual wallet balances</strong>, <strong>Calendar events</strong>, and <strong>recurring payment schedule</strong> will remain completely intact.</div>
+                </div>
+            </div>
+            <div class="fiq-modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeDisconnectBankModal()">Cancel</button>
+                <button type="button" class="btn-danger" id="confirmDisconnectBankBtn" onclick="executeDisconnectBank()">Disconnect Bank</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/nav.js" defer></script>
+    <script src="js/chat.js" defer></script>
+
+</body>
+</html>
+

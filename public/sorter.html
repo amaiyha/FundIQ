@@ -8,145 +8,254 @@
     <link rel="stylesheet" href="css/chat.css">
 </head>
 
-<body>
+<body class="app-layout-body">
 
-    <nav class="navbar">
+    <nav class="navbar sidebar-nav" aria-label="Main Navigation">
+        <div class="sidebar-top">
+            <a href="home.html" class="nav-logo" aria-label="FundIQ Home">
+                <img src="/assets/fundiq-logo.png" alt="FundIQ Home">
+            </a>
 
-        
-<a href="home.html" class="nav-logo" aria-label="FundIQ Home">
-    <img src="/assets/fundiq-logo.png" alt="FundIQ Home">
-</a>
-
-
-        <div class="nav-links">
-            <a href="home.html">Home</a>
-            <a href="wallet.html">Wallet</a>
-            <a href="sorter.html">Money Sorter</a>
-            <a href="index.html">Logout</a>
+            <div class="nav-links">
+                <a href="home.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+                    </span>
+                    <span>Home</span>
+                </a>
+                <a href="wallet.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h.01"/></svg>
+                    </span>
+                    <span>Wallet</span>
+                </a>
+                <a href="sorter.html" class="nav-item active">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>
+                    </span>
+                    <span>Money sorter</span>
+                    <span class="nav-ai-badge">AI</span>
+                </a>
+                <a href="profile.html" class="nav-item">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </span>
+                    <span>Profile</span>
+                </a>
+                <a href="index.html" class="nav-item nav-logout-hidden">Logout</a>
+            </div>
         </div>
 
+        <div class="sidebar-bottom">
+            <div class="sidebar-insight-card">
+                <div class="insight-icon-box" aria-hidden="true">✦</div>
+                <div class="insight-title">Weekly insight</div>
+                <div class="insight-text">You spent 12% less on dining this week.</div>
+            </div>
+
+            <a href="profile.html" class="sidebar-user-card" title="View Profile &amp; Financial Connections">
+                <span class="sidebar-avatar js-user-initials">FI</span>
+                <span class="sidebar-user-info">
+                    <strong class="js-user-name">FundIQ Member</strong>
+                    <small class="js-user-email"></small>
+                </span>
+                <span class="sidebar-chevron" aria-hidden="true">›</span>
+            </a>
+
+            <a href="index.html" class="sidebar-logout-btn js-logout-link">
+                <span aria-hidden="true">↪</span>
+                <span>Log out</span>
+            </a>
+        </div>
     </nav>
 
-    <main class="page-container">
+    <main class="page-container app-main">
 
-        <section class="sorter-header">
-
-            <h1>Let's Organize Your Money</h1>
-
-            <p>
-                Tell FundIQ about the money you have available,
-                and we'll create a suggested plan for you.
-            </p>
-
+        <section class="sorter-header dashboard-top-bar">
+            <div>
+                <span class="fiq-eyebrow">AI MONEY SORTER</span>
+                <h1>Let's Organize Your Money.</h1>
+                <p class="welcome-text">
+                    Tell us what you're working with. Fundiq will suggest a balanced, practical split.
+                </p>
+            </div>
         </section>
 
-        <section class="sorter-card">
+        <!-- 2-Column Smart Recommendation & Suggested Split Grid (Figma Reference) -->
+        <div class="sorter-two-col-grid">
 
-            <form id="moneyForm">
+            <!-- Left Column: White Input Card -->
+            <section class="sorter-card">
+                <div class="sorter-icon-badge" aria-hidden="true">✦</div>
+                <span class="fiq-eyebrow">SMART RECOMMENDATION</span>
+                <h2>How much would you like to sort?</h2>
+                <p class="sorter-sub-desc">
+                    We'll use a flexible 50/30/20 approach and tune it to your goals.
+                </p>
 
-                <label for="amountReceived">
-                    How much money did you receive?
-                </label>
+                <form id="moneyForm">
 
-                <input
-                    type="number"
-                    id="amountReceived"
-                    placeholder="1000"
-                    min="0"
-                    step="0.01"
-                    required
-                >
+                    <label for="amountReceived">
+                        Amount to organize
+                    </label>
+                    <div class="currency-input-wrap">
+                        <span class="currency-prefix">$</span>
+                        <input
+                            type="number"
+                            id="amountReceived"
+                            value="1000"
+                            placeholder="1,000"
+                            min="0"
+                            step="0.01"
+                            required
+                        >
+                    </div>
 
-                <label for="bills">
-                    How much do you need for bills?
-                </label>
+                    <div class="sorter-secondary-inputs">
+                        <div>
+                            <label for="bills">
+                                Upcoming bills ($)
+                            </label>
+                            <input
+                                type="number"
+                                id="bills"
+                                value="500"
+                                placeholder="500"
+                                min="0"
+                                step="0.01"
+                                required
+                            >
+                        </div>
 
-                <input
-                    type="number"
-                    id="bills"
-                    placeholder="400"
-                    min="0"
-                    step="0.01"
-                    required
-                >
+                        <div>
+                            <label for="savingsGoal">
+                                Savings goal ($)
+                            </label>
+                            <input
+                                type="number"
+                                id="savingsGoal"
+                                value="300"
+                                placeholder="300"
+                                min="0"
+                                step="0.01"
+                                required
+                            >
+                        </div>
+                    </div>
 
-                <label for="savingsGoal">
-                    How much would you like to save?
-                </label>
+                    <button type="submit" id="organizeButton" class="btn-purple-full">
+                        Show my recommendation <span class="btn-arrow">→</span>
+                    </button>
 
-                <input
-                    type="number"
-                    id="savingsGoal"
-                    placeholder="200"
-                    min="0"
-                    step="0.01"
-                    required
-                >
+                </form>
 
-                <button type="submit" id="organizeButton">
-                    Let's Organize My Money
+                <section id="statusSection" class="status-section" style="display:none;">
+                    <p id="statusMessage"></p>
+                </section>
+            </section>
+
+            <!-- Right Column: Dark Suggested Split Card -->
+            <section id="resultSection" class="result-section sorter-dark-card">
+
+                <span class="fiq-eyebrow on-dark">YOUR SUGGESTED SPLIT</span>
+                <h2 id="splitSummaryTitle">$1,000 organized simply.</h2>
+
+                <div class="split-rows-list">
+
+                    <div class="split-row-item">
+                        <div class="split-row-left">
+                            <span id="billsPctBadge" class="split-pct-badge pct-light">50%</span>
+                            <div>
+                                <h3>Bills</h3>
+                                <span class="split-row-sub">Cover the essentials first</span>
+                            </div>
+                        </div>
+                        <p id="billsResult" class="split-row-amount" data-amount="500">$500.00</p>
+                    </div>
+
+                    <div class="split-row-item">
+                        <div class="split-row-left">
+                            <span id="savingsPctBadge" class="split-pct-badge pct-purple">30%</span>
+                            <div>
+                                <h3>Savings</h3>
+                                <span class="split-row-sub">Build your future buffer</span>
+                            </div>
+                        </div>
+                        <p id="savingsResult" class="split-row-amount" data-amount="300">$300.00</p>
+                    </div>
+
+                    <div class="split-row-item">
+                        <div class="split-row-left">
+                            <span id="spendingPctBadge" class="split-pct-badge pct-muted">20%</span>
+                            <div>
+                                <h3>Spending</h3>
+                                <span class="split-row-sub">Enjoy without the guilt</span>
+                            </div>
+                        </div>
+                        <p id="spendingResult" class="split-row-amount" data-amount="200">$200.00</p>
+                    </div>
+
+                </div>
+
+                <div class="explanation sorter-explanation-box">
+                    <p id="explanationResult">
+                        Your essentials ($500.00) and savings goal ($300.00) are prioritized first, leaving $200.00 for guilt-free spending.
+                    </p>
+                </div>
+
+                <button type="button" id="acceptButton" class="btn-apply-split">
+                    Apply this split ✓
                 </button>
 
-            </form>
-
-        </section>
-
-        <section id="statusSection" class="status-section">
-            <p id="statusMessage"></p>
-        </section>
-
-        <section id="resultSection" class="result-section">
-
-            <h2>Your Suggested Plan</h2>
-
-            <div class="result-grid">
-
-                <div class="result-card">
-                    <h3>🧾 Bills</h3>
-                    <p id="billsResult">$0.00</p>
+                <div class="result-buttons sorter-secondary-btns">
+                    <button type="button" id="editButton" class="btn-dark-ghost">
+                        Edit Information
+                    </button>
+                    <button type="button" id="regenerateButton" class="btn-dark-ghost">
+                        Regenerate Plan
+                    </button>
+                    <button type="button" id="rejectButton" class="btn-dark-ghost">
+                        Reject Plan
+                    </button>
                 </div>
 
-                <div class="result-card">
-                    <h3>🛍️ Spending</h3>
-                    <p id="spendingResult">$0.00</p>
-                </div>
-
-                <div class="result-card">
-                    <h3>💰 Savings</h3>
-                    <p id="savingsResult">$0.00</p>
-                </div>
-
-            </div>
-
-            <div class="explanation">
-
-                <h3>Why FundIQ Suggested This</h3>
-
-                <p id="explanationResult"></p>
-
-            </div>
-
-                    <div class="result-buttons">
-
-            <button type="button" id="editButton">
-                Edit Information
-            </button>
-
-            <button type="button" id="regenerateButton">
-                Regenerate Plan
-            </button>
-
-            <button type="button" id="acceptButton">
-                Accept Plan
-            </button>
-
-            <button type="button" id="rejectButton">
-                Reject Plan
-            </button>
+            </section>
 
         </div>
 
-    </section>
+        <!-- Bottom Full-Width Quick Expense Bar (Figma Reference) -->
+        <section class="quick-expense-card" aria-label="Quick Expense Logger">
+            <div class="quick-expense-left">
+                <div class="quick-expense-icon" aria-hidden="true">💳</div>
+                <div>
+                    <span class="fiq-eyebrow">QUICK EXPENSE</span>
+                    <h3>Log money you've spent</h3>
+                    <p>Pick the bucket it came from and we'll update your wallet.</p>
+                </div>
+            </div>
+
+            <form id="quickExpenseForm" class="quick-expense-form">
+                <div class="qe-field-group">
+                    <label for="quickExpenseAmount">Amount</label>
+                    <input type="number" id="quickExpenseAmount" placeholder="0.00" min="0.01" step="0.01" required>
+                </div>
+                <div class="qe-field-group">
+                    <label for="quickExpenseCategory">Paid from</label>
+                    <select id="quickExpenseCategory">
+                        <option value="spending">Spending</option>
+                        <option value="bills">Bills</option>
+                        <option value="savings">Savings</option>
+                    </select>
+                </div>
+                <button type="submit" id="quickExpenseBtn" class="btn-purple-pill">
+                    Record expense
+                </button>
+            </form>
+        </section>
+
+        <div id="quickExpenseNotice" class="auth-success-msg" style="display:none; margin-top: 14px;" role="status"></div>
+
+    </main>
 
     <script src="js/sorter.js"></script>
     <script src="js/nav.js" defer></script>

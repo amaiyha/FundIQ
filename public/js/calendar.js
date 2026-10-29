@@ -26,6 +26,15 @@
         overrides: {}    // occurrenceId -> { isCancelled: boolean, title, amount, dueDate, category }
     };
 
+    // Live Plaid bank balances in memory (kept separate from manual wallet)
+    let bankBalances = {
+        bills: 0,
+        spending: 0,
+        savings: 0,
+        total: 0,
+        connected: false
+    };
+
     /**
      * Format a Date object to YYYY-MM-DD local string
      */
@@ -181,6 +190,15 @@
                 if (wData.success && wData.wallet) {
                     saveWalletData(wData.wallet);
                 }
+                if (wData.success && wData.bankBalances) {
+                    bankBalances = {
+                        bills: Number(wData.bankBalances.bills) || 0,
+                        spending: 0,
+                        savings: Number(wData.bankBalances.savings) || 0,
+                        total: Number(wData.bankBalances.total) || 0,
+                        connected: Boolean(wData.bankBalances.connected)
+                    };
+                }
             }
 
             if (pRes.ok) {
@@ -298,17 +316,21 @@
 
             // Check if this occurrence was overridden or cancelled
             const override = paymentData.overrides[occId];
-            if (override && override.isCancelled) {
+            if (override && (override.isCancelled || override.isDeleted)) {
                 return;
             }
 
             const title = override && override.title ? override.title : tpl.title;
             const amount = override && override.amount !== undefined ? override.amount : tpl.amount;
             const category = override && override.category ? override.category : tpl.category;
-            const dueDate = override && override.dueDate ? override.dueDate : occDateStr;
+            const dueDate = override && (override.dueDate || override.date) ? (override.dueDate || override.date) : occDateStr;
 
             const completion = paymentData.completions[occId];
             const isCompleted = Boolean(completion && completion.isCompleted);
+            const isPredicted =
+                override && override.isPredicted !== undefined
+                    ? Boolean(override.isPredicted)
+                    : Boolean(tpl.isPredicted && tpl.predictionStatus !== "confirmed");
 
             occurrences.push({
                 occurrenceId: occId,
@@ -319,6 +341,11 @@
                 dueDate: dueDate,
                 recurrence: tpl.recurrence,
                 isCompleted: isCompleted,
+                isPredicted: isPredicted,
+                predictionStatus: isPredicted ? "predicted" : (tpl.predictionStatus || "scheduled"),
+                detectedBillId: tpl.detectedBillId || null,
+                sourceAccountName: tpl.sourceAccountName || null,
+                lastPaidDate: tpl.lastPaidDate || null,
                 completedAt: completion ? completion.completedAt : null,
                 deductedAmount: completion ? completion.deductedAmount : null,
                 deductedCategory: completion ? completion.deductedCategory : null
@@ -335,17 +362,44 @@
      */
     function renderWalletBar() {
         const wallet = getWalletData();
-        const total = wallet.bills + wallet.spending + wallet.savings;
+        const manualTotal = wallet.bills + wallet.spending + wallet.savings;
+
+        const bankBills = Number(bankBalances.bills) || 0;
+        const bankSavings = Number(bankBalances.savings) || 0;
+        const bankTotal = bankBills + bankSavings;
+
+        const combinedBills = Math.round((wallet.bills + bankBills) * 100) / 100;
+        const combinedSpending = Math.round(wallet.spending * 100) / 100;
+        const combinedSavings = Math.round((wallet.savings + bankSavings) * 100) / 100;
+        const combinedTotal = Math.round((combinedBills + combinedSpending + combinedSavings) * 100) / 100;
 
         const totalEl = document.getElementById("calWalletTotal");
         const billsEl = document.getElementById("calWalletBills");
         const spendingEl = document.getElementById("calWalletSpending");
         const savingsEl = document.getElementById("calWalletSavings");
 
-        if (totalEl) totalEl.textContent = formatCurrency(total);
-        if (billsEl) billsEl.textContent = formatCurrency(wallet.bills);
-        if (spendingEl) spendingEl.textContent = formatCurrency(wallet.spending);
-        if (savingsEl) savingsEl.textContent = formatCurrency(wallet.savings);
+        if (totalEl) totalEl.textContent = formatCurrency(combinedTotal);
+        if (billsEl) billsEl.textContent = formatCurrency(combinedBills);
+        if (spendingEl) spendingEl.textContent = formatCurrency(combinedSpending);
+        if (savingsEl) savingsEl.textContent = formatCurrency(combinedSavings);
+
+        const totalSub = document.getElementById("calTotalSub");
+        const billsSub = document.getElementById("calBillsSub");
+        const spendingSub = document.getElementById("calSpendingSub");
+        const savingsSub = document.getElementById("calSavingsSub");
+
+        if (totalSub) {
+            totalSub.textContent = `✍️ Manual: ${formatCurrency(manualTotal)} • 🏦 Bank: ${formatCurrency(bankTotal)}`;
+        }
+        if (billsSub) {
+            billsSub.textContent = `✍️ Manual: ${formatCurrency(wallet.bills)} • 🏦 Bank: ${formatCurrency(bankBills)}`;
+        }
+        if (spendingSub) {
+            spendingSub.textContent = `✍️ Manual (Discretionary): ${formatCurrency(wallet.spending)}`;
+        }
+        if (savingsSub) {
+            savingsSub.textContent = `✍️ Manual: ${formatCurrency(wallet.savings)} • 🏦 Bank: ${formatCurrency(bankSavings)}`;
+        }
     }
 
     /**
@@ -422,26 +476,31 @@
             numSpan.textContent = dayNum;
             cell.appendChild(numSpan);
 
-            // Add indicators if payments exist
+            // Render event pills inside the day cell (matching Figma calendar)
             if (dayOccurrences && dayOccurrences.length > 0) {
-                const dotsContainer = document.createElement("div");
-                dotsContainer.className = "cal-payment-dots";
+                const eventsList = document.createElement("div");
+                eventsList.className = "cal-event-list";
 
-                const maxDots = Math.min(dayOccurrences.length, 3);
-                for (let i = 0; i < maxDots; i++) {
-                    const dot = document.createElement("span");
-                    dot.className = `cal-dot ${dayOccurrences[i].isCompleted ? "paid" : dayOccurrences[i].category}`;
-                    dotsContainer.appendChild(dot);
+                const maxEvents = Math.min(dayOccurrences.length, 2);
+                for (let i = 0; i < maxEvents; i++) {
+                    const occ = dayOccurrences[i];
+                    const pill = document.createElement("div");
+                    pill.className = `cal-event-pill ${occ.isCompleted ? "paid" : occ.category} ${occ.isPredicted && !occ.isCompleted ? "is-predicted" : ""}`;
+                    pill.innerHTML = `
+                        <span class="cal-event-title">${occ.isPredicted && !occ.isCompleted ? "🔮 " : ""}${escapeHtml(occ.title)}</span>
+                        <span class="cal-event-amt">${formatCurrency(occ.amount).replace(/\.00$/, "")}</span>
+                    `;
+                    eventsList.appendChild(pill);
                 }
 
-                if (dayOccurrences.length > 3) {
+                if (dayOccurrences.length > 2) {
                     const countBadge = document.createElement("span");
                     countBadge.className = "cal-count-badge";
-                    countBadge.textContent = `+${dayOccurrences.length - 3}`;
-                    dotsContainer.appendChild(countBadge);
+                    countBadge.textContent = `+${dayOccurrences.length - 2} more`;
+                    eventsList.appendChild(countBadge);
                 }
 
-                cell.appendChild(dotsContainer);
+                cell.appendChild(eventsList);
             }
 
             cell.addEventListener("click", () => {
@@ -483,16 +542,20 @@
                 const statusBadge = occ.isCompleted
                     ? `<span class="badge-tag completed">Paid ✓</span>`
                     : `<span class="badge-tag ${occ.category}">${occ.category}</span>`;
+                const predBadge = occ.isPredicted && !occ.isCompleted
+                    ? `<span class="badge-tag predicted">🔮 Predicted</span>`
+                    : "";
 
                 listHtml += `
-                    <div class="date-payment-item">
+                    <div class="date-payment-item ${occ.isPredicted && !occ.isCompleted ? "is-predicted-item" : ""}">
                         <div>
                             <strong>${escapeHtml(occ.title)}</strong> — ${formatCurrency(occ.amount)}
                             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-                                ${statusBadge} • ${occ.recurrence}
+                                ${predBadge} ${statusBadge} • ${occ.recurrence}
                             </div>
                         </div>
-                        <div>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <button type="button" class="btn-icon-action" title="Edit payment" onclick="FundIQCalendar.openEditModal('${occ.occurrenceId}')">✏️</button>
                             ${occ.isCompleted
                                 ? `<button type="button" class="btn-undo" onclick="FundIQCalendar.undoPayment('${occ.occurrenceId}')">Undo</button>`
                                 : `<button type="button" class="btn-complete" onclick="FundIQCalendar.completePayment('${occ.occurrenceId}')">Mark Paid</button>`
@@ -519,6 +582,21 @@
     function renderUpcomingPayments() {
         const listEl = document.getElementById("upcomingPaymentsList");
         if (!listEl) return;
+
+        // Calculate current month's scheduled summary for header & footer
+        const monthStart = new Date(currentYear, currentMonth, 1);
+        const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+        const monthOccurrences = generateOccurrences(monthStart, monthEnd);
+        const monthTotal = monthOccurrences.reduce((sum, o) => sum + (Number(o.amount) || 0), 0);
+
+        const countSubtitle = document.getElementById("upcomingCountSubtitle");
+        if (countSubtitle) {
+            countSubtitle.textContent = `${monthOccurrences.length} ${monthOccurrences.length === 1 ? "payment" : "payments"} this month`;
+        }
+        const monthlyTotalEl = document.getElementById("calMonthlyScheduledTotal");
+        if (monthlyTotalEl) {
+            monthlyTotalEl.textContent = formatCurrency(monthTotal);
+        }
 
         // Generate upcoming occurrences for the next 90 days (and past 7 days)
         const today = new Date();
@@ -561,45 +639,58 @@
             card.className = `payment-card-item ${occ.isCompleted ? "is-completed" : ""}`;
 
             const d = parseDateStr(occ.dueDate);
-            const monthStr = d.toLocaleDateString("en-US", { month: "short" });
+            const monthStr = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
             const dayNum = d.getDate();
 
-            // Status or overdue tag
+            // Status, predicted, or overdue tag
             let statusTag = "";
             if (occ.isCompleted) {
                 statusTag = `<span class="badge-tag completed">Paid ✓</span>`;
-            } else if (occ.dueDate < todayStr) {
-                statusTag = `<span class="badge-tag overdue">Overdue</span>`;
-            } else if (occ.dueDate === todayStr) {
-                statusTag = `<span class="badge-tag overdue">Due Today</span>`;
+            } else {
+                if (occ.isPredicted) {
+                    statusTag += `<span class="badge-tag predicted">🔮 Predicted</span>`;
+                }
+                if (occ.dueDate < todayStr) {
+                    statusTag += `<span class="badge-tag overdue">Overdue</span>`;
+                } else if (occ.dueDate === todayStr) {
+                    statusTag += `<span class="badge-tag overdue">Due Today</span>`;
+                }
             }
 
-            const recurrenceLabel = occ.recurrence === "none" ? "One-time" : `${occ.recurrence} 🔁`;
+            const catTitle = occ.category ? occ.category.charAt(0).toUpperCase() + occ.category.slice(1) : "Bills";
+            const recurrenceLabel = occ.recurrence === "none"
+                ? "One-time"
+                : occ.recurrence.charAt(0).toUpperCase() + occ.recurrence.slice(1);
+            const sourceLabel = occ.sourceAccountName ? ` · ${occ.sourceAccountName}` : "";
 
             card.innerHTML = `
                 <div class="payment-info-group">
+                    <button
+                        type="button"
+                        class="payment-check-circle ${occ.isCompleted ? "checked" : ""}"
+                        title="${occ.isCompleted ? "Undo payment completion" : "Mark payment complete"}"
+                        aria-label="${occ.isCompleted ? "Undo payment completion" : "Mark payment complete"}"
+                        onclick="${occ.isCompleted ? `FundIQCalendar.undoPayment('${occ.occurrenceId}')` : `FundIQCalendar.completePayment('${occ.occurrenceId}')`}"
+                    >
+                        ${occ.isCompleted ? "✓" : ""}
+                    </button>
                     <div class="payment-date-badge">
-                        <span class="p-month">${monthStr}</span>
                         <span class="p-day">${dayNum}</span>
+                        <span class="p-month">${monthStr}</span>
                     </div>
                     <div class="payment-details">
                         <div class="payment-title-row">
                             <h4 class="payment-title">${escapeHtml(occ.title)}</h4>
-                            <span class="badge-tag ${occ.category}">${occ.category}</span>
-                            <span class="badge-tag recurrence">${recurrenceLabel}</span>
                             ${statusTag}
                         </div>
                         <div class="payment-sub-row">
-                            <span class="payment-amount">${formatCurrency(occ.amount)}</span>
-                            <span>Due: ${occ.dueDate}</span>
+                            <span class="cat-dot ${escapeHtml(occ.category)}"></span>
+                            <span>${escapeHtml(catTitle)} · ${escapeHtml(recurrenceLabel)}${escapeHtml(sourceLabel)}</span>
                         </div>
                     </div>
                 </div>
                 <div class="payment-actions-group">
-                    ${occ.isCompleted
-                        ? `<button type="button" class="btn-undo" title="Reverse payment deduction" onclick="FundIQCalendar.undoPayment('${occ.occurrenceId}')">Undo</button>`
-                        : `<button type="button" class="btn-complete" title="Complete and deduct from wallet" onclick="FundIQCalendar.completePayment('${occ.occurrenceId}')">✓ Complete</button>`
-                    }
+                    <span class="payment-amount">${formatCurrency(occ.amount).replace(/\.00$/, "")}</span>
                     <button type="button" class="btn-icon-action" title="Edit payment" onclick="FundIQCalendar.openEditModal('${occ.occurrenceId}')">✏️</button>
                     <button type="button" class="btn-icon-action delete" title="Delete payment" onclick="FundIQCalendar.promptDelete('${occ.occurrenceId}')">🗑️</button>
                 </div>
@@ -777,16 +868,19 @@
             return;
         }
 
-        titleEl.textContent = "⚠️ Insufficient Funds";
+        const bankCatAmount = Number(bankBalances[occ.category]) || 0;
+
+        titleEl.textContent = "⚠️ Insufficient Manual Wallet Funds";
         bodyEl.innerHTML = `
-            <p>You do not have enough funds in your <strong>${occ.category.toUpperCase()}</strong> balance to complete this payment.</p>
+            <p>You do not have enough manual funds in your <strong>${occ.category.toUpperCase()}</strong> wallet balance to complete this payment.</p>
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 13.5px;">
                 <div>Payment: <strong>${escapeHtml(occ.title)}</strong></div>
                 <div>Amount Required: <strong style="color: #dc2626;">${formatCurrency(occ.amount)}</strong></div>
-                <div>Available Balance: <strong style="color: #16a34a;">${formatCurrency(available)}</strong></div>
+                <div>Available Manual Balance: <strong style="color: #16a34a;">${formatCurrency(available)}</strong></div>
+                ${bankCatAmount > 0 ? `<div style="margin-top: 4px; color: #334155;">🏦 Connected Bank (${escapeHtml(occ.category)}): <strong>${formatCurrency(bankCatAmount)}</strong> <em>(Read-only via Plaid)</em></div>` : ""}
                 <div style="margin-top: 6px; color: #dc2626; font-weight: 600;">Deficit: ${formatCurrency(occ.amount - available)}</div>
             </div>
-            <p style="font-size: 13px; color: #64748b;">To prevent creating an accidental negative balance, this payment remains incomplete. Please add money to your wallet or organize funds first.</p>
+            <p style="font-size: 13px; color: #64748b;">To prevent creating an accidental negative balance, this payment remains incomplete. Note: Plaid bank balances are read-only and are not automatically deducted when marking a scheduled payment complete. Please organize or add manual funds in your Wallet first.</p>
         `;
 
         footerEl.innerHTML = `
@@ -940,24 +1034,31 @@
                 scope = scopeRadio ? scopeRadio.value : "occurrence";
             }
 
-            if (scope === "occurrence") {
+            if (scope === "occurrence" && !tpl.isPredicted && !tpl.detectedBillId) {
                 // Override this single occurrence
                 paymentData.overrides[occurrenceId] = {
                     title: title,
                     amount: Math.round(amount * 100) / 100,
                     dueDate: dueDate,
+                    date: dueDate,
                     category: category,
+                    isPredicted: false,
                     isCancelled: false
                 };
                 showNotification(`Updated this occurrence of "${title}".`, "success");
             } else {
-                // Update entire template series
+                // Update template series (and confirm if it was a predicted bill)
                 tpl.title = title;
                 tpl.amount = Math.round(amount * 100) / 100;
+                tpl.startDate = dueDate;
                 tpl.dueDate = dueDate;
                 tpl.category = category;
                 tpl.recurrence = recurrence;
-                showNotification(`Updated payment series "${title}".`, "success");
+                tpl.isPredicted = false;
+                tpl.predictionStatus = "confirmed";
+                tpl.userModified = true;
+                delete paymentData.overrides[occurrenceId];
+                showNotification(`Updated payment schedule for "${title}".`, "success");
             }
 
             savePaymentData();
@@ -1028,12 +1129,17 @@
     }
 
     function executeDelete(occ, scope) {
-        if (scope === "occurrence") {
-            paymentData.overrides[occ.occurrenceId] = { isCancelled: true };
+        if (scope === "occurrence" && !occ.isPredicted && !occ.detectedBillId) {
+            paymentData.overrides[occ.occurrenceId] = { isCancelled: true, isDeleted: true };
             showNotification(`Cancelled occurrence of "${occ.title}" for ${occ.dueDate}.`, "info");
         } else {
             paymentData.templates = paymentData.templates.filter((t) => t.id !== occ.templateId);
-            showNotification(`Deleted payment series "${occ.title}".`, "info");
+            if (occ.detectedBillId) {
+                fetch(`/api/bills/detected/${encodeURIComponent(occ.detectedBillId)}`, {
+                    method: "DELETE"
+                }).catch(() => {});
+            }
+            showNotification(`Deleted payment "${occ.title}".`, "info");
         }
         savePaymentData();
         renderAll();

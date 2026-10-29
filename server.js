@@ -2,9 +2,11 @@ const express = require("express");
 const session = require("express-session");
 const bcrypt = require("bcryptjs");
 const OpenAI = require("openai");
+const { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } = require("plaid");
 const path = require("path");
-require("dotenv").config();
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 const db = require("./db");
+const emailService = require("./emailService");
 const {
     ASSISTANT_IDENTITY,
     SUGGESTED_PROMPTS,
@@ -14,7 +16,7 @@ const {
 
 const app = express();
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 
 // -----------------------------
@@ -27,8 +29,78 @@ const client = new OpenAI({
 
 
 // -----------------------------
+// PLAID CONNECTION (SANDBOX)
+// -----------------------------
+
+function getPlaidEnvName() {
+    const raw = (process.env.PLAID_ENV || "sandbox").trim().toLowerCase();
+    return PlaidEnvironments[raw] ? raw : "sandbox";
+}
+
+const PLAID_ENV = getPlaidEnvName();
+
+function getPlaidClient() {
+    const envName = getPlaidEnvName();
+    const basePath = PlaidEnvironments[envName] || PlaidEnvironments.sandbox;
+    const cfg = new Configuration({
+        basePath,
+        baseOptions: {
+            headers: {
+                "PLAID-CLIENT-ID": (process.env.PLAID_CLIENT_ID || "").trim(),
+                "PLAID-SECRET": (process.env.PLAID_SECRET || "").trim(),
+                "Plaid-Version": "2020-09-14"
+            }
+        }
+    });
+    return new PlaidApi(cfg);
+}
+
+const plaidClient = getPlaidClient();
+
+function isPlaidConfigured() {
+    return Boolean(
+        process.env.PLAID_CLIENT_ID &&
+        process.env.PLAID_CLIENT_ID.trim() &&
+        process.env.PLAID_SECRET &&
+        process.env.PLAID_SECRET.trim()
+    );
+}
+
+function formatPlaidError(err, fallbackMsg) {
+    const plaidErr = err && err.response && err.response.data;
+    if (plaidErr && typeof plaidErr === "object") {
+        return {
+            error: plaidErr.display_message || plaidErr.error_message || fallbackMsg,
+            error_code: plaidErr.error_code || "PLAID_API_ERROR",
+            error_type: plaidErr.error_type || "API_ERROR"
+        };
+    }
+    return {
+        error: fallbackMsg,
+        error_code: "INTERNAL_ERROR",
+        error_type: "SERVER_ERROR"
+    };
+}
+
+
+// -----------------------------
 // MIDDLEWARE
 // -----------------------------
+
+// Localhost development CORS support so requests from localhost or 127.0.0.1 never fail
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+        res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    }
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(204);
+    }
+    next();
+});
 
 app.use(express.json());
 
@@ -46,6 +118,14 @@ app.use(session({
 }));
 
 app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/profile", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "profile.html"));
+});
+
+app.get("/wallet", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "wallet.html"));
+});
 
 
 // -----------------------------
@@ -552,7 +632,7 @@ app.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        const user = db.findUserByUsername(cleanUsername);
+        const user = db.findUserByUsername(cleanUsername) || db.findUserByEmail(cleanUsername);
 
         if (!user) {
             recordFailedLogin(rateLimitKey);
@@ -656,38 +736,325 @@ app.get("/api/auth/me", (req, res) => {
 // Get Authenticated User's Wallet
 app.get("/api/wallet", requireAuth, (req, res) => {
     try {
-        const wallet = db.getUserWallet(req.session.userId);
-        return res.json({ success: true, wallet });
+        const summary = db.getFullWalletSummary(req.session.userId);
+        return res.json({
+            success: true,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            subcategories: summary.subcategories,
+            detectedBills: summary.detectedBills
+        });
     } catch (err) {
         console.error("Get wallet error:", err);
         return res.status(500).json({ success: false, error: "Failed to retrieve wallet." });
     }
 });
 
-// Update Authenticated User's Wallet
-app.put("/api/wallet", requireAuth, (req, res) => {
+// Get Authenticated User's Wallet Subcategories
+app.get("/api/wallet/subcategories", requireAuth, (req, res) => {
     try {
-        const { bills, spending, savings } = req.body;
-        const updated = db.setUserWallet(req.session.userId, {
-            bills: Number(bills) || 0,
-            spending: Number(spending) || 0,
-            savings: Number(savings) || 0
+        const subcategories = db.getUserSubcategories(req.session.userId);
+        return res.json({
+            success: true,
+            subcategories
         });
-        return res.json({ success: true, wallet: updated });
+    } catch (err) {
+        console.error("Get subcategories error:", err);
+        return res.status(500).json({ success: false, error: "Failed to retrieve wallet subcategories." });
+    }
+});
+
+// Create a New Wallet Subcategory
+app.post("/api/wallet/subcategories", requireAuth, (req, res) => {
+    try {
+        const result = db.addUserSubcategory(req.session.userId, req.body || {});
+        const summary = db.getFullWalletSummary(req.session.userId);
+        return res.status(201).json({
+            success: true,
+            message: "Subcategory added successfully.",
+            subcategory: result.subcategory,
+            subcategories: result.subcategories,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to add subcategory."
+        });
+    }
+});
+
+// Update an Existing Wallet Subcategory (preserves ID, transactions, and wallet balances)
+function handleUpdateWalletSubcategory(req, res) {
+    try {
+        const subId = req.params.id || (req.body && req.body.id);
+        const result = db.updateUserSubcategory(req.session.userId, subId, req.body || {});
+        const summary = db.getFullWalletSummary(req.session.userId);
+        return res.json({
+            success: true,
+            message: "Subcategory updated successfully.",
+            subcategory: result.subcategory,
+            subcategories: result.subcategories,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to update subcategory."
+        });
+    }
+}
+
+app.put("/api/wallet/subcategories/:id", requireAuth, handleUpdateWalletSubcategory);
+app.put("/api/wallet/subcategories", requireAuth, handleUpdateWalletSubcategory);
+
+// Delete a Wallet Subcategory
+app.delete("/api/wallet/subcategories/:id", requireAuth, (req, res) => {
+    try {
+        const result = db.deleteUserSubcategory(req.session.userId, req.params.id);
+        return res.json({
+            success: true,
+            message: "Subcategory removed.",
+            deletedId: result.deletedId,
+            subcategories: result.subcategories
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to delete subcategory."
+        });
+    }
+});
+
+// Update Authenticated User's Wallet
+app.put("/api/wallet", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const prevWallet = db.getUserWallet(userId);
+        const { bills, spending, savings, depositEvent, suppressDepositEmail } = req.body || {};
+
+        const nextBills = Number(bills) || 0;
+        const nextSpending = Number(spending) || 0;
+        const nextSavings = Number(savings) || 0;
+
+        db.setUserWallet(userId, {
+            bills: nextBills,
+            spending: nextSpending,
+            savings: nextSavings
+        });
+
+        const summary = db.getFullWalletSummary(userId);
+        let emailNotification = null;
+
+        // Detect if a deposit was made (either explicit depositEvent or net positive deposit into buckets)
+        const dBills = Math.round((nextBills - prevWallet.bills) * 100) / 100;
+        const dSpending = Math.round((nextSpending - prevWallet.spending) * 100) / 100;
+        const dSavings = Math.round((nextSavings - prevWallet.savings) * 100) / 100;
+        const netDeposit = Math.round((dBills + dSpending + dSavings) * 100) / 100;
+
+        if (!suppressDepositEmail && (depositEvent || netDeposit > 0)) {
+            const user = db.findUserById(userId);
+            if (user) {
+                const changedBuckets = [];
+                if (dBills > 0) changedBuckets.push(`Bills (+$${dBills.toFixed(2)})`);
+                if (dSavings > 0) changedBuckets.push(`Savings (+$${dSavings.toFixed(2)})`);
+                if (dSpending > 0) changedBuckets.push(`Spending (+$${dSpending.toFixed(2)})`);
+
+                let categoryLabel = "Wallet";
+                if (depositEvent && depositEvent.category) {
+                    categoryLabel = depositEvent.category;
+                } else if (dBills > 0 && dSavings === 0 && dSpending === 0) {
+                    categoryLabel = "Bills";
+                } else if (dSavings > 0 && dBills === 0 && dSpending === 0) {
+                    categoryLabel = "Savings";
+                } else if (dSpending > 0 && dBills === 0 && dSavings === 0) {
+                    categoryLabel = "Spending";
+                } else if (changedBuckets.length > 1) {
+                    categoryLabel = "Money Sorter Split (Bills, Savings, Spending)";
+                }
+
+                const amountToNotify =
+                    depositEvent && Number(depositEvent.amount) > 0
+                        ? Number(depositEvent.amount)
+                        : netDeposit;
+
+                if (amountToNotify > 0) {
+                    try {
+                        emailNotification = await emailService.sendDepositNotification(user, {
+                            amount: amountToNotify,
+                            category: categoryLabel,
+                            date: (depositEvent && depositEvent.date) || new Date().toISOString().split("T")[0],
+                            source: (depositEvent && depositEvent.source) || "FundIQ Wallet Update",
+                            eventId:
+                                (depositEvent && depositEvent.eventId) ||
+                                `wallet_put:${nextBills.toFixed(2)}_${nextSavings.toFixed(2)}_${nextSpending.toFixed(2)}`,
+                            breakdownText: changedBuckets.length > 1 ? changedBuckets.join(", ") : null,
+                            newTotalBalance: Math.round((nextBills + nextSavings + nextSpending) * 100) / 100
+                        });
+                    } catch (notifyErr) {
+                        console.warn("Non-blocking deposit email warning:", notifyErr.message);
+                    }
+                }
+            }
+        }
+
+        return res.json({
+            success: true,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            emailNotification
+        });
     } catch (err) {
         console.error("Update wallet error:", err);
         return res.status(500).json({ success: false, error: "Failed to update wallet." });
     }
 });
 
+// Record an Explicit Deposit into Authenticated User's Wallet & Trigger Deposit Email
+async function handleWalletDeposit(req, res) {
+    try {
+        const userId = req.session.userId;
+        const user = db.findUserById(userId);
+        if (!user) {
+            return res.status(401).json({ success: false, error: "Authenticated user not found." });
+        }
+
+        const current = db.getUserWallet(userId);
+        const body = req.body || {};
+
+        let addBills = 0;
+        let addSpending = 0;
+        let addSavings = 0;
+        let categoryLabel = "Spending";
+
+        if (body.amount !== undefined && Number(body.amount) > 0) {
+            const amt = Math.round(Number(body.amount) * 100) / 100;
+            const cat = String(body.category || "spending").toLowerCase();
+            if (cat === "bills") {
+                addBills = amt;
+                categoryLabel = "Bills";
+            } else if (cat === "savings") {
+                addSavings = amt;
+                categoryLabel = "Savings";
+            } else {
+                addSpending = amt;
+                categoryLabel = "Spending";
+            }
+        } else {
+            addBills = Math.max(0, Math.round((Number(body.bills) || 0) * 100) / 100);
+            addSpending = Math.max(0, Math.round((Number(body.spending) || 0) * 100) / 100);
+            addSavings = Math.max(0, Math.round((Number(body.savings) || 0) * 100) / 100);
+            const activeCats = [];
+            if (addBills > 0) activeCats.push("Bills");
+            if (addSavings > 0) activeCats.push("Savings");
+            if (addSpending > 0) activeCats.push("Spending");
+            categoryLabel = activeCats.length === 1 ? activeCats[0] : activeCats.join(" / ");
+        }
+
+        const totalDeposit = Math.round((addBills + addSpending + addSavings) * 100) / 100;
+        if (totalDeposit <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: "Deposit amount must be greater than $0.00."
+            });
+        }
+
+        // Check if this exact deposit eventId was already processed to avoid double-adding money or sending duplicate emails
+        const eventId = body.eventId ? String(body.eventId).trim() : null;
+        if (eventId) {
+            const existingNotify = db.findEmailNotificationByEventKey(userId, `deposit_made:${eventId}`);
+            if (existingNotify && (existingNotify.status === "sent" || existingNotify.status === "queued_dry_run")) {
+                const summary = db.getFullWalletSummary(userId);
+                return res.json({
+                    success: true,
+                    duplicate: true,
+                    wallet: summary.wallet,
+                    manualWallet: summary.manualWallet,
+                    bankBalances: summary.bankBalances,
+                    combinedWallet: summary.combinedWallet,
+                    emailNotification: {
+                        sent: false,
+                        duplicate: true,
+                        skipped: true,
+                        reason: "DUPLICATE_EVENT",
+                        notification: existingNotify
+                    }
+                });
+            }
+        }
+
+        const updatedWallet = db.setUserWallet(userId, {
+            bills: Math.round((current.bills + addBills) * 100) / 100,
+            spending: Math.round((current.spending + addSpending) * 100) / 100,
+            savings: Math.round((current.savings + addSavings) * 100) / 100
+        });
+
+        const summary = db.getFullWalletSummary(userId);
+        const newTotal = Math.round((updatedWallet.bills + updatedWallet.spending + updatedWallet.savings) * 100) / 100;
+
+        let emailNotification = null;
+        try {
+            const breakdownParts = [];
+            if (addBills > 0) breakdownParts.push(`Bills: +$${addBills.toFixed(2)}`);
+            if (addSavings > 0) breakdownParts.push(`Savings: +$${addSavings.toFixed(2)}`);
+            if (addSpending > 0) breakdownParts.push(`Spending: +$${addSpending.toFixed(2)}`);
+
+            emailNotification = await emailService.sendDepositNotification(user, {
+                amount: totalDeposit,
+                category: body.categoryLabel || categoryLabel,
+                date: body.date || new Date().toISOString().split("T")[0],
+                source: body.source || "FundIQ Wallet Deposit",
+                eventId: eventId || `deposit_${Date.now()}_${totalDeposit.toFixed(2)}`,
+                breakdownText: breakdownParts.length > 1 ? breakdownParts.join(", ") : null,
+                newTotalBalance: newTotal
+            });
+        } catch (notifyErr) {
+            console.warn("Non-blocking deposit email warning:", notifyErr.message);
+        }
+
+        return res.json({
+            success: true,
+            depositAmount: totalDeposit,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            emailNotification
+        });
+    } catch (err) {
+        console.error("Wallet deposit error:", err);
+        return res.status(500).json({ success: false, error: "Failed to record deposit." });
+    }
+}
+
+app.post("/api/wallet/deposit", requireAuth, handleWalletDeposit);
+app.post("/api/wallet/add", requireAuth, handleWalletDeposit);
+
 // Clear Wallet: Resets balances ONLY, preserving calendar & payments
 app.post("/api/wallet/clear", requireAuth, (req, res) => {
     try {
-        const cleared = db.clearUserWallet(req.session.userId);
+        db.clearUserWallet(req.session.userId);
+        const summary = db.getFullWalletSummary(req.session.userId);
         return res.json({
             success: true,
             message: "Wallet balances cleared to $0.00. Your calendar and payment schedule remain intact.",
-            wallet: cleared
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet
         });
     } catch (err) {
         console.error("Clear wallet error:", err);
@@ -707,28 +1074,48 @@ app.get("/api/payments", requireAuth, (req, res) => {
 });
 
 // Save Authenticated User's Payments
-app.post("/api/payments", requireAuth, (req, res) => {
+app.post("/api/payments", requireAuth, async (req, res) => {
     try {
-        const updated = db.setUserPayments(req.session.userId, req.body);
-        return res.json({ success: true, payments: updated });
+        const userId = req.session.userId;
+        const updated = db.setUserPayments(userId, req.body);
+
+        // Trigger due/upcoming unpaid payment reminder check without blocking response
+        let reminderCheck = null;
+        if (req.body && req.body.checkRemindersSync) {
+            reminderCheck = await emailService.checkUserDuePaymentReminders(
+                userId,
+                req.body.referenceDate || new Date()
+            );
+        } else {
+            emailService.checkUserDuePaymentReminders(userId, new Date()).catch((e) => {
+                console.warn("Background payment reminder check warning:", e.message);
+            });
+        }
+
+        return res.json({
+            success: true,
+            payments: updated,
+            reminderCheck: reminderCheck || undefined
+        });
     } catch (err) {
         console.error("Save payments error:", err);
         return res.status(500).json({ success: false, error: "Failed to save payments." });
     }
 });
 
-// Complete Payment: Idempotent deduction from authenticated user's wallet
-app.post("/api/payments/complete", requireAuth, (req, res) => {
+// Complete Payment: Idempotent deduction from authenticated user's manual wallet
+app.post("/api/payments/complete", requireAuth, async (req, res) => {
     try {
-        const { occurrenceId, amount, category } = req.body;
+        const userId = req.session.userId;
+        const { occurrenceId, amount, category, title: reqTitle } = req.body || {};
         const numAmount = Number(amount);
 
         if (!occurrenceId || isNaN(numAmount) || numAmount <= 0 || !category) {
             return res.status(400).json({ success: false, error: "Invalid payment completion data." });
         }
 
-        const payments = db.getUserPayments(req.session.userId);
-        const wallet = db.getUserWallet(req.session.userId);
+        const payments = db.getUserPayments(userId);
+        const wallet = db.getUserWallet(userId);
 
         // Check if already completed
         if (payments.completions && payments.completions[occurrenceId] && payments.completions[occurrenceId].isCompleted) {
@@ -741,16 +1128,19 @@ app.post("/api/payments/complete", requireAuth, (req, res) => {
 
         const currentBal = wallet[category] || 0;
         if (currentBal < numAmount) {
+            const bankBalances = db.getUserBankBalances(userId);
+            const bankCatBal = Number(bankBalances[category]) || 0;
             return res.status(400).json({
                 success: false,
                 reason: "INSUFFICIENT_FUNDS",
                 available: currentBal,
+                bankBalance: bankCatBal,
                 required: numAmount,
-                error: `Insufficient funds in ${category.toUpperCase()}. Balance: $${currentBal.toFixed(2)}, Required: $${numAmount.toFixed(2)}`
+                error: `Insufficient funds in manual ${category.toUpperCase()} wallet. Manual Balance: $${currentBal.toFixed(2)}, Required: $${numAmount.toFixed(2)}. Note: Connected bank balances are read-only and are not automatically deducted when completing scheduled payments.`
             });
         }
 
-        // Deduct exactly once
+        // Deduct exactly once from manual FundIQ wallet (never from Plaid bank balances)
         wallet[category] = Math.round((currentBal - numAmount) * 100) / 100;
 
         if (!payments.completions) payments.completions = {};
@@ -761,18 +1151,218 @@ app.post("/api/payments/complete", requireAuth, (req, res) => {
             deductedCategory: category
         };
 
-        db.setUserWallet(req.session.userId, wallet);
-        db.setUserPayments(req.session.userId, payments);
+        db.setUserWallet(userId, wallet);
+        db.setUserPayments(userId, payments);
+        const summary = db.getFullWalletSummary(userId);
+
+        // Resolve payment title for notification
+        let resolvedTitle = reqTitle || "Scheduled Payment";
+        if (!reqTitle && Array.isArray(payments.templates)) {
+            const matchedTpl = payments.templates.find((t) => String(occurrenceId).startsWith(`${t.id}_`));
+            if (matchedTpl && matchedTpl.title) {
+                resolvedTitle = matchedTpl.title;
+            }
+        }
+        if (payments.overrides && payments.overrides[occurrenceId]?.title) {
+            resolvedTitle = payments.overrides[occurrenceId].title;
+        }
+
+        let emailNotification = null;
+        const user = db.findUserById(userId);
+        if (user) {
+            try {
+                emailNotification = await emailService.sendPaymentActivityNotification(user, {
+                    submissionType: "completed_local",
+                    occurrenceId,
+                    title: resolvedTitle,
+                    amount: numAmount,
+                    category,
+                    date: new Date().toISOString().split("T")[0],
+                    remainingManualBalance: wallet[category]
+                });
+            } catch (notifyErr) {
+                console.warn("Non-blocking payment completion email warning:", notifyErr.message);
+            }
+        }
 
         return res.json({
             success: true,
-            wallet,
-            payments
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            payments,
+            completedPayment: {
+                occurrenceId,
+                title: resolvedTitle,
+                amount: numAmount,
+                category,
+                status: "completed",
+                submissionType: "completed_local",
+                bankTransferOccurred: false
+            },
+            emailNotification
         });
 
     } catch (err) {
         console.error("Complete payment error:", err);
         return res.status(500).json({ success: false, error: "Failed to complete payment." });
+    }
+});
+
+// Submit or Record Payment Activity Notification (Distinguishes External Submission vs. Local Completion)
+app.post("/api/payments/submit", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const user = db.findUserById(userId);
+        if (!user) {
+            return res.status(401).json({ success: false, error: "Authenticated user not found." });
+        }
+
+        const {
+            occurrenceId,
+            paymentId,
+            eventId,
+            title,
+            amount,
+            category,
+            date,
+            dueDate,
+            submissionType,
+            serviceName,
+            paymentService,
+            processorReference,
+            externalConfirmationId,
+            allowControlledProcessorTest
+        } = req.body || {};
+
+        const numAmount = Number(amount);
+        if (!title || isNaN(numAmount) || numAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: "Valid payment title and positive amount are required."
+            });
+        }
+
+        const resolvedRef = processorReference || externalConfirmationId || null;
+        const resolvedService = serviceName || paymentService || "External Payment Service";
+        const resolvedType = submissionType || (resolvedRef ? "submitted_external" : null);
+
+        if (resolvedType !== "completed_local" && !resolvedRef) {
+            return res.status(400).json({
+                success: false,
+                error: "Cannot send a 'Payment Submitted' confirmation without a verified external payment processor reference (processorReference / externalConfirmationId). Use POST /api/payments/complete to mark a scheduled payment complete locally in your FundIQ Wallet."
+            });
+        }
+
+        const emailNotification = await emailService.sendPaymentActivityNotification(user, {
+            submissionType: resolvedType,
+            occurrenceId: occurrenceId || paymentId,
+            eventId: eventId || paymentId,
+            title,
+            amount: numAmount,
+            category: category || "bills",
+            date: date || dueDate || new Date().toISOString().split("T")[0],
+            serviceName: resolvedService,
+            processorReference: resolvedRef,
+            allowControlledProcessorTest:
+                allowControlledProcessorTest !== undefined ? Boolean(allowControlledProcessorTest) : Boolean(resolvedRef)
+        });
+
+        return res.json({
+            success: true,
+            emailNotification
+        });
+    } catch (err) {
+        console.error("Payment submit notification error:", err);
+        return res.status(500).json({ success: false, error: "Failed to process payment notification." });
+    }
+});
+
+// -----------------------------
+// EMAIL NOTIFICATION PREFERENCES & REMINDER ROUTES
+// -----------------------------
+
+app.get("/api/notifications/preferences", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const user = db.findUserById(userId);
+        const prefs = db.getUserNotificationPrefs(userId);
+        const history = db.getUserEmailNotifications(userId, 20);
+        const cfg = emailService.getEmailConfig();
+
+        return res.json({
+            success: true,
+            recipientEmail: user ? user.email : null,
+            preferences: prefs,
+            emailDelivery: {
+                configured: cfg.configured,
+                mode: cfg.dryRun ? "dry_run" : "live",
+                provider: cfg.provider,
+                paymentProcessorEnabled: cfg.paymentProcessorEnabled
+            },
+            history
+        });
+    } catch (err) {
+        console.error("Get notification preferences error:", err);
+        return res.status(500).json({ success: false, error: "Failed to load notification preferences." });
+    }
+});
+
+function handleUpdateNotificationPrefs(req, res) {
+    try {
+        const userId = req.session.userId;
+        const body = req.body || {};
+
+        if (body.reminderDaysBefore !== undefined) {
+            const numDays = Number(body.reminderDaysBefore);
+            if (isNaN(numDays) || numDays < 0 || numDays > 30) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Advance reminder days must be a number between 0 and 30."
+                });
+            }
+        }
+
+        if (body.phoneNumber !== undefined && String(body.phoneNumber).trim() !== "") {
+            const rawPhone = String(body.phoneNumber).trim();
+            const digitsOnly = rawPhone.replace(/\D/g, "");
+            if (digitsOnly.length < 7 || digitsOnly.length > 15 || !/^[0-9+\-().\s]+$/.test(rawPhone)) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Please enter a valid phone number (7 to 15 digits) for SMS notifications."
+                });
+            }
+        }
+
+        const updatedPrefs = db.setUserNotificationPrefs(userId, body);
+        return res.json({
+            success: true,
+            message: "Your notification preferences have been saved.",
+            preferences: updatedPrefs
+        });
+    } catch (err) {
+        console.error("Update notification preferences error:", err);
+        return res.status(500).json({ success: false, error: "Failed to update notification preferences." });
+    }
+}
+
+app.put("/api/notifications/preferences", requireAuth, handleUpdateNotificationPrefs);
+app.post("/api/notifications/preferences", requireAuth, handleUpdateNotificationPrefs);
+
+app.post("/api/notifications/check-due", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const referenceDate = (req.body && req.body.referenceDate) || new Date();
+        const result = await emailService.checkUserDuePaymentReminders(userId, referenceDate);
+        return res.json({
+            success: true,
+            result,
+            ...result
+        });
+    } catch (err) {
+        console.error("Check due payments error:", err);
+        return res.status(500).json({ success: false, error: "Failed to check due payment reminders." });
     }
 });
 
@@ -806,10 +1396,14 @@ app.post("/api/payments/undo", requireAuth, (req, res) => {
 
         db.setUserWallet(req.session.userId, wallet);
         db.setUserPayments(req.session.userId, payments);
+        const summary = db.getFullWalletSummary(req.session.userId);
 
         return res.json({
             success: true,
-            wallet,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
             payments,
             refundedAmount: refundAmount,
             refundedCategory: refundCategory
@@ -823,13 +1417,646 @@ app.post("/api/payments/undo", requireAuth, (req, res) => {
 
 
 // -----------------------------
+// PLAID BANK INTEGRATION ROUTES
+// -----------------------------
+
+// 1. Create a Plaid Link Token for the currently authenticated user
+app.post("/api/plaid/create_link_token", requireAuth, async (req, res) => {
+    try {
+        const user = db.findUserById(req.session.userId);
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "Authenticated user account not found. Please log in again."
+            });
+        }
+
+        if (!isPlaidConfigured()) {
+            return res.status(500).json({
+                success: false,
+                error: "Plaid credentials (PLAID_CLIENT_ID / PLAID_SECRET) are not configured on the server."
+            });
+        }
+
+        const linkTokenRequest = {
+            user: {
+                client_user_id: String(user.id)
+            },
+            client_name: "FundIQ",
+            products: [Products.Auth],
+            optional_products: [Products.Transactions],
+            country_codes: [CountryCode.Us],
+            language: "en"
+        };
+
+        const activeClient = getPlaidClient();
+        const createTokenResponse = await activeClient.linkTokenCreate(linkTokenRequest);
+
+        return res.json({
+            success: true,
+            link_token: createTokenResponse.data.link_token,
+            expiration: createTokenResponse.data.expiration,
+            env: getPlaidEnvName()
+        });
+    } catch (err) {
+        console.error("Plaid create_link_token error:", err.response?.data || err.message);
+        const formatted = formatPlaidError(err, "Unable to initialize Plaid Link right now. Please try again.");
+        return res.status(502).json({
+            success: false,
+            ...formatted
+        });
+    }
+});
+
+// 2. Exchange temporary public_token for an access_token and fetch accounts/balances
+app.post("/api/plaid/exchange_public_token", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const user = db.findUserById(userId);
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "Authenticated user account not found. Please log in again."
+            });
+        }
+
+        if (!isPlaidConfigured()) {
+            return res.status(500).json({
+                success: false,
+                error: "Plaid credentials are not configured on the server."
+            });
+        }
+
+        const { public_token, metadata } = req.body || {};
+
+        if (!public_token || typeof public_token !== "string" || !public_token.trim().startsWith("public-")) {
+            return res.status(400).json({
+                success: false,
+                error: "A valid Plaid public_token is required."
+            });
+        }
+
+        let institutionId = metadata?.institution?.institution_id
+            ? String(metadata.institution.institution_id).trim()
+            : null;
+        let institutionName = metadata?.institution?.name
+            ? String(metadata.institution.name).trim()
+            : null;
+
+        // Pre-check duplicate institution connection if metadata included institution_id
+        if (institutionId) {
+            const existing = db.findPlaidItemByUserAndInstitution(userId, institutionId);
+            if (existing) {
+                return res.status(409).json({
+                    success: false,
+                    error_code: "DUPLICATE_INSTITUTION",
+                    error: `${institutionName || existing.institution_name || "This financial institution"} is already connected to your FundIQ account. Use "Refresh Balances" to update your balances, or disconnect the existing connection first.`
+                });
+            }
+        }
+
+        const activeClient = getPlaidClient();
+
+        // Exchange public_token for permanent access_token (kept strictly server-side)
+        const exchangeResponse = await activeClient.itemPublicTokenExchange({
+            public_token: public_token.trim()
+        });
+
+        const accessToken = exchangeResponse.data.access_token;
+        const itemId = exchangeResponse.data.item_id;
+
+        // Resolve institution details from Plaid if not supplied in metadata
+        if (!institutionId || !institutionName) {
+            try {
+                const itemResp = await activeClient.itemGet({ access_token: accessToken });
+                if (itemResp.data?.item?.institution_id) {
+                    institutionId = itemResp.data.item.institution_id;
+                }
+                if (institutionId && !institutionName) {
+                    const instResp = await activeClient.institutionsGetById({
+                        institution_id: institutionId,
+                        country_codes: [CountryCode.Us]
+                    });
+                    if (instResp.data?.institution?.name) {
+                        institutionName = instResp.data.institution.name;
+                    }
+                }
+            } catch (instErr) {
+                console.warn("Plaid institution lookup warning:", instErr.message);
+            }
+        }
+
+        // Post-exchange duplicate check once authoritative institution_id is known
+        if (institutionId) {
+            const existing = db.findPlaidItemByUserAndInstitution(userId, institutionId);
+            if (existing && existing.item_id !== itemId) {
+                // Clean up the duplicate Plaid Item so unused tokens don't linger
+                await activeClient.itemRemove({ access_token: accessToken }).catch(() => {});
+                return res.status(409).json({
+                    success: false,
+                    error_code: "DUPLICATE_INSTITUTION",
+                    error: `${institutionName || existing.institution_name || "This financial institution"} is already connected to your FundIQ account. Use "Refresh Balances" to update your balances, or disconnect the existing connection first.`
+                });
+            }
+        }
+
+        // Retrieve account information and balances from Plaid
+        const accountsResponse = await activeClient.accountsGet({
+            access_token: accessToken
+        });
+
+        const plaidAccounts = accountsResponse.data.accounts || [];
+
+        // Save item and accounts in SQLite, scoped strictly to req.session.userId
+        const savedAccounts = db.savePlaidItemAndAccounts(
+            userId,
+            {
+                itemId,
+                accessToken,
+                institutionId,
+                institutionName: institutionName || "Connected Financial Institution"
+            },
+            plaidAccounts
+        );
+
+        // Sync verified transaction history & detect recurring bills without blocking connection if transactions are still initializing
+        await syncUserPlaidTransactions(userId).catch((txErr) => {
+            console.warn("Initial Plaid transactions sync notice:", txErr.message);
+        });
+
+        const summary = db.getFullWalletSummary(userId);
+        const transactions = db.getUserPlaidTransactions(userId, 50);
+        const payments = db.getUserPayments(userId);
+
+        return res.json({
+            success: true,
+            message: `Connected to ${institutionName || "your bank"} successfully.`,
+            env: getPlaidEnvName(),
+            items: db.getPlaidItemsSanitized(userId),
+            accounts: savedAccounts,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            subcategories: summary.subcategories,
+            detectedBills: summary.detectedBills,
+            transactions,
+            payments
+        });
+    } catch (err) {
+        console.error("Plaid exchange_public_token error:", err.response?.data || err.message);
+        const formatted = formatPlaidError(err, "Failed to complete bank connection. Please try again.");
+        return res.status(400).json({
+            success: false,
+            ...formatted
+        });
+    }
+});
+
+// Helper to sync verified Plaid transactions and run recurring bill detection for a user
+async function syncUserPlaidTransactions(userId, options = {}) {
+    const internalItems = db.getPlaidItemsInternal(userId);
+    const activeClient = getPlaidClient();
+    const txSyncNotices = [];
+    let syncedCount = 0;
+
+    if (isPlaidConfigured()) {
+        for (const item of internalItems) {
+            try {
+                let cursor = item.transactions_cursor || undefined;
+                let hasMore = true;
+                let pageGuard = 0;
+
+                while (hasMore && pageGuard < 10) {
+                    const syncResp = await activeClient.transactionsSync({
+                        access_token: item.access_token,
+                        cursor,
+                        count: 100
+                    });
+                    const data = syncResp.data || {};
+                    const combined = [
+                        ...(Array.isArray(data.added) ? data.added : []),
+                        ...(Array.isArray(data.modified) ? data.modified : [])
+                    ];
+                    const removed = Array.isArray(data.removed) ? data.removed : [];
+                    syncedCount += db.savePlaidTransactions(userId, item.item_id, combined, removed);
+                    cursor = data.next_cursor || cursor;
+                    hasMore = Boolean(data.has_more);
+                    pageGuard++;
+                }
+
+                if (cursor) {
+                    db.updatePlaidItemCursor(userId, item.item_id, cursor);
+                }
+            } catch (syncErr) {
+                // Fallback to transactionsGet if transactionsSync is not ready or unsupported for this item
+                try {
+                    const endDt = new Date();
+                    const startDt = new Date(endDt.getTime() - 180 * 24 * 60 * 60 * 1000);
+                    const endDate = endDt.toISOString().split("T")[0];
+                    const startDate = startDt.toISOString().split("T")[0];
+                    const getResp = await activeClient.transactionsGet({
+                        access_token: item.access_token,
+                        start_date: startDate,
+                        end_date: endDate
+                    });
+                    const txs = (getResp.data && Array.isArray(getResp.data.transactions)) ? getResp.data.transactions : [];
+                    syncedCount += db.savePlaidTransactions(userId, item.item_id, txs, []);
+                } catch (fallbackErr) {
+                    const code = fallbackErr.response?.data?.error_code || syncErr.response?.data?.error_code || "TRANSACTIONS_UNAVAILABLE";
+                    txSyncNotices.push({
+                        item_id: item.item_id,
+                        institution_name: item.institution_name,
+                        code,
+                        message: fallbackErr.response?.data?.error_message || syncErr.message
+                    });
+                }
+            }
+        }
+    }
+
+    const detection = db.detectAndPredictRecurringBills(userId, options.referenceDate || null);
+    return {
+        syncedCount,
+        txSyncNotices,
+        ...detection
+    };
+}
+
+// Helper to refresh all active Plaid items for a user
+async function refreshUserPlaidBalances(userId) {
+    const internalItems = db.getPlaidItemsInternal(userId);
+    const refreshErrors = [];
+    const activeClient = getPlaidClient();
+
+    for (const item of internalItems) {
+        try {
+            const balResp = await activeClient.accountsBalanceGet({
+                access_token: item.access_token
+            });
+            if (balResp.data && Array.isArray(balResp.data.accounts)) {
+                db.updatePlaidAccountBalances(userId, item.item_id, balResp.data.accounts);
+            }
+        } catch (err) {
+            console.error(`Plaid balance refresh error for item ${item.item_id}:`, err.response?.data || err.message);
+            refreshErrors.push({
+                item_id: item.item_id,
+                institution_name: item.institution_name,
+                ...formatPlaidError(err, `Could not refresh balances for ${item.institution_name || "bank"}.`)
+            });
+        }
+    }
+
+    await syncUserPlaidTransactions(userId).catch((txErr) => {
+        console.warn("Plaid refresh transactions sync notice:", txErr.message);
+    });
+
+    return refreshErrors;
+}
+
+// 3. Retrieve connected user's account information, balances, and wallet mappings
+app.get("/api/plaid/accounts", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        let refreshErrors = [];
+
+        if (req.query.refresh === "true" || req.query.refresh === "1") {
+            refreshErrors = await refreshUserPlaidBalances(userId);
+        } else {
+            // Ensure any stored transactions are evaluated for recurring bills
+            db.detectAndPredictRecurringBills(userId);
+        }
+
+        const items = db.getPlaidItemsSanitized(userId);
+        const accounts = db.getPlaidAccountsByUser(userId);
+        const summary = db.getFullWalletSummary(userId);
+        const transactions = db.getUserPlaidTransactions(userId, 50);
+        const payments = db.getUserPayments(userId);
+
+        return res.json({
+            success: true,
+            env: getPlaidEnvName(),
+            connected: items.length > 0,
+            items,
+            accounts,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            subcategories: summary.subcategories,
+            detectedBills: summary.detectedBills,
+            transactions,
+            payments,
+            refreshErrors: refreshErrors.length > 0 ? refreshErrors : undefined
+        });
+    } catch (err) {
+        console.error("Plaid get accounts error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to retrieve connected bank accounts."
+        });
+    }
+});
+
+// 4. Explicitly refresh live bank balances from Plaid without altering manual balances or payments
+app.post("/api/plaid/refresh", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const internalItems = db.getPlaidItemsInternal(userId);
+
+        if (internalItems.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: "No bank accounts are currently connected to refresh."
+            });
+        }
+
+        const refreshErrors = await refreshUserPlaidBalances(userId);
+        const items = db.getPlaidItemsSanitized(userId);
+        const accounts = db.getPlaidAccountsByUser(userId);
+        const summary = db.getFullWalletSummary(userId);
+        const transactions = db.getUserPlaidTransactions(userId, 50);
+        const payments = db.getUserPayments(userId);
+
+        if (refreshErrors.length === internalItems.length) {
+            return res.status(502).json({
+                success: false,
+                error: refreshErrors[0].error || "Could not refresh balances from Plaid right now.",
+                refreshErrors,
+                items,
+                accounts,
+                wallet: summary.wallet,
+                manualWallet: summary.manualWallet,
+                bankBalances: summary.bankBalances,
+                combinedWallet: summary.combinedWallet,
+                subcategories: summary.subcategories,
+                detectedBills: summary.detectedBills,
+                transactions,
+                payments
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: "Live bank balances refreshed successfully. Your manual balances and payment schedule remain intact.",
+            env: getPlaidEnvName(),
+            connected: items.length > 0,
+            items,
+            accounts,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            subcategories: summary.subcategories,
+            detectedBills: summary.detectedBills,
+            transactions,
+            payments,
+            refreshErrors: refreshErrors.length > 0 ? refreshErrors : undefined
+        });
+    } catch (err) {
+        console.error("Plaid refresh balances error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to refresh bank balances."
+        });
+    }
+});
+
+// 5. Update user's checking -> Bills and savings -> Rainy Day / Savings account mappings
+function handleUpdatePlaidMappings(req, res) {
+    try {
+        const userId = req.session.userId;
+        const updatedAccounts = db.updatePlaidAccountMappings(userId, req.body || {});
+        const summary = db.getFullWalletSummary(userId);
+
+        return res.json({
+            success: true,
+            message: "Account category mappings updated.",
+            items: db.getPlaidItemsSanitized(userId),
+            accounts: updatedAccounts,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to update account mappings."
+        });
+    }
+}
+
+app.put("/api/plaid/mappings", requireAuth, handleUpdatePlaidMappings);
+app.post("/api/plaid/mappings", requireAuth, handleUpdatePlaidMappings);
+
+// 6. Disconnect a bank connection securely
+async function handleDisconnectPlaid(req, res) {
+    try {
+        const userId = req.session.userId;
+        const requestedItemId = req.params?.itemId || req.body?.item_id || req.body?.itemId || null;
+        const activeClient = getPlaidClient();
+
+        if (requestedItemId) {
+            const item = db.getPlaidItemByUserAndItemId(userId, requestedItemId);
+            if (!item) {
+                return res.status(404).json({
+                    success: false,
+                    error: "Bank connection not found or does not belong to your account."
+                });
+            }
+
+            // Revoke access token with Plaid
+            if (isPlaidConfigured() && item.access_token) {
+                try {
+                    await activeClient.itemRemove({ access_token: item.access_token });
+                } catch (plaidErr) {
+                    console.warn("Plaid itemRemove warning (proceeding with local cleanup):", plaidErr.response?.data || plaidErr.message);
+                }
+            }
+
+            db.removePlaidItem(userId, item.item_id);
+        } else {
+            const userItems = db.getPlaidItemsInternal(userId);
+            if (userItems.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: "No active bank connection found to disconnect."
+                });
+            }
+
+            for (const item of userItems) {
+                if (isPlaidConfigured() && item.access_token) {
+                    try {
+                        await activeClient.itemRemove({ access_token: item.access_token });
+                    } catch (plaidErr) {
+                        console.warn("Plaid itemRemove warning:", plaidErr.response?.data || plaidErr.message);
+                    }
+                }
+                db.removePlaidItem(userId, item.item_id);
+            }
+        }
+
+        const items = db.getPlaidItemsSanitized(userId);
+        const accounts = db.getPlaidAccountsByUser(userId);
+        const summary = db.getFullWalletSummary(userId);
+
+        return res.json({
+            success: true,
+            message: "Bank connection disconnected securely. Your manual wallet balances and scheduled payments remain intact.",
+            connected: items.length > 0,
+            items,
+            accounts,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet
+        });
+    } catch (err) {
+        console.error("Plaid disconnect error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to disconnect bank connection."
+        });
+    }
+}
+
+app.post("/api/plaid/disconnect", requireAuth, handleDisconnectPlaid);
+app.delete("/api/plaid/items/:itemId", requireAuth, handleDisconnectPlaid);
+
+// -----------------------------
+// DETECTED RECURRING BILLS & TRANSACTION HISTORY ROUTES
+// -----------------------------
+
+app.get("/api/bills/detected", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const detection = db.detectAndPredictRecurringBills(userId, req.query.referenceDate || null);
+        const transactions = db.getUserPlaidTransactions(userId, Number(req.query.limit) || 50);
+        const payments = db.getUserPayments(userId);
+        return res.json({
+            success: true,
+            detectedBills: detection.detectedBills,
+            activePredictions: detection.activePredictions,
+            transactions,
+            payments
+        });
+    } catch (err) {
+        console.error("Get detected bills error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to retrieve detected bills and transaction history."
+        });
+    }
+});
+
+app.post("/api/bills/sync", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const referenceDate = (req.body && req.body.referenceDate) || null;
+        const syncResult = await syncUserPlaidTransactions(userId, { referenceDate });
+        const transactions = db.getUserPlaidTransactions(userId, 50);
+        const payments = db.getUserPayments(userId);
+        const summary = db.getFullWalletSummary(userId);
+        return res.json({
+            success: true,
+            message: "Recurring bill detection and payment history synced.",
+            syncedCount: syncResult.syncedCount,
+            detectedBills: syncResult.detectedBills,
+            activePredictions: syncResult.activePredictions,
+            transactions,
+            payments,
+            wallet: summary.wallet,
+            manualWallet: summary.manualWallet,
+            bankBalances: summary.bankBalances,
+            combinedWallet: summary.combinedWallet,
+            txSyncNotices: syncResult.txSyncNotices && syncResult.txSyncNotices.length > 0 ? syncResult.txSyncNotices : undefined
+        });
+    } catch (err) {
+        console.error("Sync detected bills error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to sync recurring bills."
+        });
+    }
+});
+
+app.put("/api/bills/detected/:id", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const result = db.updateDetectedBill(userId, req.params.id, req.body || {});
+        return res.json({
+            success: true,
+            message: "Predicted bill updated and synced to your calendar.",
+            bill: result.bill,
+            detectedBills: result.detectedBills,
+            activePredictions: result.detectedBills.filter((b) => b.status !== "dismissed"),
+            payments: result.payments
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to update detected bill."
+        });
+    }
+});
+
+function handleDismissDetectedBill(req, res) {
+    try {
+        const userId = req.session.userId;
+        const result = db.dismissDetectedBill(userId, req.params.id);
+        return res.json({
+            success: true,
+            message: "Predicted bill dismissed and removed from your calendar.",
+            dismissedId: result.dismissedId,
+            detectedBills: result.detectedBills,
+            activePredictions: result.detectedBills.filter((b) => b.status !== "dismissed"),
+            payments: result.payments
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to dismiss detected bill."
+        });
+    }
+}
+
+app.delete("/api/bills/detected/:id", requireAuth, handleDismissDetectedBill);
+app.post("/api/bills/detected/:id/dismiss", requireAuth, handleDismissDetectedBill);
+
+// Ensure any unmatched /api/* route returns a JSON 404 response (never an HTML 404 page)
+app.use("/api", (req, res) => {
+    return res.status(404).json({
+        success: false,
+        error: `API endpoint not found: ${req.method} ${req.originalUrl}`
+    });
+});
+
+
+// -----------------------------
 // START SERVER
 // -----------------------------
 
-app.listen(PORT, () => {
+if (require.main === module) {
+    emailService.startPaymentReminderScheduler();
+    const httpServer = app.listen(PORT, () => {
+        console.log(
+            `FundIQ is running at http://localhost:${PORT} (Plaid: ${isPlaidConfigured() ? getPlaidEnvName() : "unconfigured"}, Email: ${emailService.getEmailConfig().provider})`
+        );
+    });
+    httpServer.on("error", (err) => {
+        if (err && err.code === "EADDRINUSE") {
+            console.error(
+                `[FundIQ Error] Port ${PORT} is already in use by another process. Stop the existing process on port ${PORT} and run "npm start" again so updated routes are loaded.`
+            );
+        } else {
+            console.error("[FundIQ Server Error]:", err);
+        }
+        process.exit(1);
+    });
+}
 
-    console.log(
-        `FundIQ is running at http://localhost:${PORT}`
-    );
-
-});
+module.exports = app;

@@ -8,85 +8,143 @@
     <link rel="stylesheet" href="css/chat.css">
 </head>
 
-<body class="login-page">
+<body class="login-page auth-split-body">
 
-    <div class="login-container">
+    <div class="auth-split-shell">
 
-        <div class="logo">
-            <img src="/assets/fundiq-logo.png" alt="FundIQ - Find. Fund. Forward.">
-        </div>
+        <!-- Left Dark Hero Panel -->
+        <section class="auth-hero-panel">
+            <div class="auth-hero-inner">
+                <div class="auth-orbital-graphic" aria-hidden="true">
+                    <div class="orbit-ring orbit-ring-outer"></div>
+                    <div class="orbit-ring orbit-ring-inner"></div>
 
-        <div class="login-card">
+                    <div class="orbit-center-orb">
+                        <span class="orbit-f-letter">F</span>
+                    </div>
 
-            <h1>Create an Account</h1>
+                    <div class="orbit-badge orbit-badge-bills">
+                        <span class="orbit-badge-label">Bills</span>
+                        <span class="orbit-badge-val">$2,480</span>
+                    </div>
 
-            <p>Sign up to start organizing your personal finances.</p>
+                    <div class="orbit-badge orbit-badge-savings">
+                        <span class="orbit-badge-label">Savings</span>
+                        <span class="orbit-badge-val">+ $450</span>
+                    </div>
 
-            <div id="registerError" class="auth-error-msg" style="display:none;" role="alert"></div>
+                    <div class="orbit-badge orbit-badge-organized">
+                        <span class="orbit-sparkle">✦</span>
+                        <span>Organized.</span>
+                    </div>
+                </div>
 
-            <form id="registerForm">
+                <div class="fiq-eyebrow on-dark">MONEY, MADE CLEAR</div>
 
-                <label for="fullName">Full Name</label>
-                <input
-                    type="text"
-                    id="fullName"
-                    name="fullName"
-                    placeholder="Enter your full name"
-                    autocomplete="name"
-                    required
-                >
+                <h1 class="auth-hero-headline">
+                    Build better habits.<br>
+                    Keep more of <span class="auth-hero-accent">your money.</span>
+                </h1>
 
-                <label for="username">Username</label>
-                <input
-                    type="text"
-                    id="username"
-                    name="username"
-                    placeholder="Choose a username"
-                    autocomplete="username"
-                    minlength="3"
-                    maxlength="30"
-                    required
-                >
-                <small class="field-hint">3–30 characters, letters, numbers, and underscores.</small>
+                <p class="auth-hero-copy">
+                    One simple place to plan payments, shape your savings, and make
+                    everyday spending feel effortless.
+                </p>
 
-                <label for="email">Email Address</label>
-                <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    placeholder="Enter your email address"
-                    autocomplete="email"
-                    required
-                >
+                <div class="auth-social-proof">
+                    <div class="social-avatars" aria-hidden="true">
+                        <span class="s-avatar">A</span>
+                        <span class="s-avatar">J</span>
+                        <span class="s-avatar">M</span>
+                    </div>
+                    <div class="social-text">
+                        <strong>4.9 out of 5</strong>
+                        <span>Loved by thoughtful spenders</span>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-                <label for="password">Password</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    placeholder="Create a password (min. 8 characters)"
-                    autocomplete="new-password"
-                    minlength="8"
-                    maxlength="100"
-                    required
-                >
-                <small class="field-hint">Minimum 8 characters.</small>
+        <!-- Right White Card Form Panel -->
+        <section class="auth-form-panel">
+            <div class="login-container">
 
-                <button type="submit" id="registerBtn">
-                    Create Account
-                </button>
+                <div class="logo auth-brand-top">
+                    <img src="/assets/fundiq-logo.png" alt="FundIQ - Find. Fund. Forward.">
+                </div>
 
-            </form>
+                <div class="login-card">
 
-            <p class="auth-switch">
-                Already have an account? <a href="index.html">Log In</a>
-            </p>
+                    <div class="fiq-eyebrow">GET STARTED</div>
 
-            <p class="demo-note">
-                Passwords are encrypted using secure bcrypt hashing.
-            </p>
+                    <h2 class="auth-form-title">Create your fundiq account</h2>
 
-        </div>
+                    <p class="auth-form-subtitle">Sign up to start organizing your personal finances.</p>
+
+                    <div id="registerError" class="auth-error-msg" style="display:none;" role="alert"></div>
+
+                    <form id="registerForm">
+
+                        <label for="fullName">Full name</label>
+                        <input
+                            type="text"
+                            id="fullName"
+                            name="fullName"
+                            placeholder="Alex Kim"
+                            autocomplete="name"
+                            required
+                        >
+
+                        <label for="username">Username</label>
+                        <input
+                            type="text"
+                            id="username"
+                            name="username"
+                            placeholder="alex_kim"
+                            autocomplete="username"
+                            minlength="3"
+                            maxlength="30"
+                            required
+                        >
+                        <small class="field-hint">3–30 characters, letters, numbers, and underscores.</small>
+
+                        <label for="email">Email address</label>
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            placeholder="you@example.com"
+                            autocomplete="email"
+                            required
+                        >
+
+                        <label for="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            placeholder="At least 8 characters"
+                            autocomplete="new-password"
+                            minlength="8"
+                            maxlength="100"
+                            required
+                        >
+                        <small class="field-hint">Minimum 8 characters.</small>
+
+                        <button type="submit" id="registerBtn" class="btn-purple-full">
+                            Create Account <span aria-hidden="true">→</span>
+                        </button>
+
+                    </form>
+
+                    <p class="auth-switch">
+                        Already have an account? <a href="index.html">Log in</a>
+                    </p>
+
+                </div>
+
+            </div>
+        </section>
 
     </div>
 
@@ -95,4 +153,3 @@
 
 </body>
 </html>
-

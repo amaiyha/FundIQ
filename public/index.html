@@ -3,69 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FundIQ - Login</title>
+    <title>FundIQ - Log in</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/chat.css">
 </head>
 
-<body class="login-page">
+<body class="login-page auth-split-body">
 
-    <div class="login-container">
+    <div class="auth-split-shell">
 
-        <div class="logo">
-            <img src="/assets/fundiq-logo.png" alt="FundIQ - Find. Fund. Forward.">
-        </div>
+        <!-- Left Dark Hero Panel (Figma Reference) -->
+        <section class="auth-hero-panel" aria-label="FundIQ Overview">
+            <div class="auth-hero-glow"></div>
 
-        <p class="tagline">
-            Organize your money. Understand your finances.
-        </p>
+            <div class="auth-hero-inner">
+                <!-- Orbital Financial Graphic -->
+                <div class="auth-orbital-graphic" aria-hidden="true">
+                    <div class="orbit-ring orbit-ring-outer"></div>
+                    <div class="orbit-ring orbit-ring-inner"></div>
 
-        <div class="login-card">
+                    <div class="orbit-center-orb">
+                        <span class="orbit-f-letter">F</span>
+                    </div>
 
-            <h1>Welcome Back!</h1>
+                    <div class="orbit-badge orbit-badge-bills">
+                        <span class="orbit-badge-label">Bills</span>
+                        <strong class="orbit-badge-val">$2,480</strong>
+                    </div>
 
-            <p>Log in to continue to your FundIQ account.</p>
+                    <div class="orbit-badge orbit-badge-savings">
+                        <span class="orbit-badge-label">Savings</span>
+                        <strong class="orbit-badge-val">+ $450</strong>
+                    </div>
 
-            <div id="loginSuccess" class="auth-success-msg" style="display:none;" role="status"></div>
-            <div id="loginError" class="auth-error-msg" style="display:none;" role="alert"></div>
+                    <div class="orbit-badge orbit-badge-organized">
+                        <span class="orbit-sparkle">✦</span>
+                        <span>Organized.</span>
+                    </div>
+                </div>
 
-            <form id="loginForm">
+                <div>
+                    <span class="fiq-eyebrow on-dark">MONEY, MADE CLEAR</span>
+                    <h2 class="auth-hero-headline">
+                        Build better habits.<br>
+                        Keep more of <span class="auth-hero-accent">your money.</span>
+                    </h2>
+                    <p class="auth-hero-copy">
+                        One simple place to plan payments, shape your savings, and make everyday spending feel effortless.
+                    </p>
 
-                <label for="username">Username</label>
-                <input
-                    type="text"
-                    id="username"
-                    name="username"
-                    placeholder="Enter your username"
-                    autocomplete="username"
-                    required
-                >
+                    <div class="auth-social-proof">
+                        <div class="social-avatars" aria-hidden="true">
+                            <span class="s-avatar">A</span>
+                            <span class="s-avatar">J</span>
+                            <span class="s-avatar">M</span>
+                        </div>
+                        <div class="social-text">
+                            <strong>4.9 out of 5</strong>
+                            <span>Loved by thoughtful spenders</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-                <label for="password">Password</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    placeholder="Enter your password"
-                    autocomplete="current-password"
-                    required
-                >
+        <!-- Right White Card Form Panel -->
+        <section class="auth-form-panel">
+            <div class="login-container">
 
-                <button type="submit" id="loginBtn">
-                    Log In
-                </button>
+                <div class="login-card">
 
-            </form>
+                    <span class="fiq-eyebrow">WELCOME BACK</span>
 
-            <p class="auth-switch">
-                Don't have an account? <a href="register.html">Create an account</a>
-            </p>
+                    <h1 class="auth-form-title">Login to FundIQ</h1>
 
-            <p class="demo-note">
-                Protected by secure server-side session authentication.
-            </p>
+                    <p class="auth-card-subtitle auth-form-subtitle">Your money plan is right where you left it.</p>
 
-        </div>
+                    <div id="loginSuccess" class="auth-success-msg" style="display:none;" role="status"></div>
+                    <div id="loginError" class="auth-error-msg" style="display:none;" role="alert"></div>
+
+                    <form id="loginForm">
+
+                        <label for="username">Email address or username</label>
+                        <input
+                            type="text"
+                            id="username"
+                            name="username"
+                            placeholder="you@example.com"
+                            autocomplete="username"
+                            required
+                        >
+
+                        <label for="password">Password</label>
+                        <div class="password-input-wrap">
+                            <input
+                                type="password"
+                                id="password"
+                                name="password"
+                                placeholder="At least 8 characters"
+                                autocomplete="current-password"
+                                required
+                            >
+                            <button type="button" id="togglePasswordBtn" class="password-eye-btn pw-eye-btn" aria-label="Show password">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="forgot-password-row auth-forgot-row">
+                            <a href="#forgot" id="forgotPasswordLink" class="forgot-link">Forgot password?</a>
+                        </div>
+
+                        <button type="submit" id="loginBtn" class="btn-purple-full">
+                            Log in <span class="btn-arrow">→</span>
+                        </button>
+
+                    </form>
+
+                    <p class="auth-switch">
+                        New to fundiq? <a href="register.html">Create an account</a>
+                    </p>
+
+                </div>
+
+            </div>
+        </section>
 
     </div>
 
