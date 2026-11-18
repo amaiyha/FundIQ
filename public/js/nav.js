@@ -80,6 +80,37 @@ document.addEventListener("DOMContentLoaded", async () => {
                 window.dispatchEvent(new CustomEvent("fundiq:user-loaded", {
                     detail: data.user
                 }));
+
+                // Populate sidebar Weekly Insight card only when the user has real weekly report activity
+                fetch("/api/insights/weekly", { credentials: "same-origin", cache: "no-store" })
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((wData) => {
+                        const rep = wData && wData.success ? wData.latestReport : null;
+                        const hasActivity =
+                            rep &&
+                            ((Number(rep.totalSpent) || 0) > 0 ||
+                                (Number(rep.prevWeekSpent) || 0) > 0 ||
+                                (Number(rep.totalDeposited) || 0) > 0);
+
+                        document.querySelectorAll(".sidebar-insight-card").forEach((cardEl) => {
+                            const textEl = cardEl.querySelector(".insight-text");
+                            if (hasActivity && textEl) {
+                                const pct = Number(rep.spendingChangePct) || 0;
+                                const dirText =
+                                    pct < 0
+                                        ? `You spent ${Math.abs(pct)}% less this week ($${rep.totalSpent.toFixed(0)} vs. $${rep.prevWeekSpent.toFixed(0)}).`
+                                        : pct > 0
+                                        ? `Spending is up ${pct}% this week ($${rep.totalSpent.toFixed(0)} total).`
+                                        : `You spent $${rep.totalSpent.toFixed(0)} this week ($${rep.totalDeposited.toFixed(0)} deposited).`;
+                                textEl.textContent = dirText;
+                                cardEl.style.display = "";
+                            } else {
+                                if (textEl) textEl.textContent = "";
+                                cardEl.style.display = "none";
+                            }
+                        });
+                    })
+                    .catch(() => {});
             } else {
                 // Not authenticated on server -> never display a previous user's cached name
                 clearClientUserCache();

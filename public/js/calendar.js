@@ -95,65 +95,38 @@
         }
     }
 
+    const LEGACY_DEMO_IDS = new Set(["tpl_rent", "tpl_phone", "tpl_groceries"]);
+
     /**
-     * Load payments from localStorage with versioning & safe fallback
+     * Load payments from localStorage with versioning & safe fallback (blank by default)
      */
     function loadPaymentData() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw);
+                const rawTemplates = Array.isArray(parsed.templates) ? parsed.templates : [];
+                const cleanTemplates = rawTemplates.filter((t) => t && !LEGACY_DEMO_IDS.has(String(t.id)));
                 paymentData = {
-                    templates: Array.isArray(parsed.templates) ? parsed.templates : [],
+                    templates: cleanTemplates,
                     completions: parsed.completions && typeof parsed.completions === "object" ? parsed.completions : {},
                     overrides: parsed.overrides && typeof parsed.overrides === "object" ? parsed.overrides : {}
                 };
+                if (cleanTemplates.length !== rawTemplates.length) {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(paymentData));
+                }
                 return;
             }
         } catch (e) {
             console.error("FundIQ: Failed to read payments storage, initializing empty:", e);
         }
 
-        // Initialize with helpful demo templates if completely empty
-        const todayStr = formatDateStr(new Date());
-        const [y, m, d] = todayStr.split("-").map(Number);
-        const rentDate = `${y}-${String(m).padStart(2, "0")}-01`;
-        const phoneDate = `${y}-${String(m).padStart(2, "0")}-15`;
-
+        // Start completely blank until the user connects a bank account or adds payments manually
         paymentData = {
-            templates: [
-                {
-                    id: "tpl_rent",
-                    title: "Apartment Rent",
-                    amount: 600.00,
-                    category: "bills",
-                    startDate: rentDate,
-                    recurrence: "monthly",
-                    notes: "Monthly housing payment"
-                },
-                {
-                    id: "tpl_phone",
-                    title: "Cell Phone Plan",
-                    amount: 65.00,
-                    category: "bills",
-                    startDate: phoneDate,
-                    recurrence: "monthly",
-                    notes: "Unlimited mobile service"
-                },
-                {
-                    id: "tpl_groceries",
-                    title: "Weekly Groceries",
-                    amount: 80.00,
-                    category: "spending",
-                    startDate: todayStr,
-                    recurrence: "weekly",
-                    notes: "Supermarket restocking"
-                }
-            ],
+            templates: [],
             completions: {},
             overrides: {}
         };
-        savePaymentData();
     }
 
     /**
@@ -204,14 +177,15 @@
             if (pRes.ok) {
                 const pData = await pRes.json();
                 if (pData.success && pData.payments && Array.isArray(pData.payments.templates)) {
-                    if (pData.payments.templates.length > 0 || Object.keys(pData.payments.completions || {}).length > 0) {
-                        paymentData = {
-                            templates: pData.payments.templates,
-                            completions: pData.payments.completions || {},
-                            overrides: pData.payments.overrides || {}
-                        };
-                        savePaymentData(true);
-                    }
+                    const cleanServerTemplates = pData.payments.templates.filter(
+                        (t) => t && !LEGACY_DEMO_IDS.has(String(t.id))
+                    );
+                    paymentData = {
+                        templates: cleanServerTemplates,
+                        completions: pData.payments.completions || {},
+                        overrides: pData.payments.overrides || {}
+                    };
+                    savePaymentData(true);
                 }
             }
 
@@ -547,11 +521,11 @@
                     : "";
 
                 listHtml += `
-                    <div class="date-payment-item ${occ.isPredicted && !occ.isCompleted ? "is-predicted-item" : ""}">
-                        <div>
-                            <strong>${escapeHtml(occ.title)}</strong> — ${formatCurrency(occ.amount)}
-                            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-                                ${predBadge} ${statusBadge} • ${occ.recurrence}
+                    <div class="date-payment-item cat-${escapeHtml(occ.category)} ${occ.isPredicted && !occ.isCompleted ? "is-predicted-item" : ""}">
+                        <div class="date-payment-text">
+                            <strong class="date-payment-title">${escapeHtml(occ.title)}</strong> <span class="date-payment-amt">— ${formatCurrency(occ.amount)}</span>
+                            <div class="date-payment-desc">
+                                ${predBadge} ${statusBadge} • ${escapeHtml(occ.recurrence)}
                             </div>
                         </div>
                         <div style="display:flex; gap:6px; align-items:center;">
@@ -636,7 +610,7 @@
         listEl.innerHTML = "";
         occurrences.forEach((occ) => {
             const card = document.createElement("div");
-            card.className = `payment-card-item ${occ.isCompleted ? "is-completed" : ""}`;
+            card.className = `payment-card-item cat-${occ.category || "bills"} ${occ.isCompleted ? "is-completed" : ""}`;
 
             const d = parseDateStr(occ.dueDate);
             const monthStr = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();

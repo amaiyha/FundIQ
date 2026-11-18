@@ -10,7 +10,9 @@ const emailService = require("./emailService");
 const {
     ASSISTANT_IDENTITY,
     SUGGESTED_PROMPTS,
+    INFORMATIONAL_DISCLAIMER,
     SYSTEM_PROMPT,
+    buildTrustedSourcesContext,
     getHonestFallbackResponse
 } = require("./assistantKnowledge");
 
@@ -26,6 +28,13 @@ const PORT = Number(process.env.PORT) || 3000;
 const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
+
+function isOpenAIConfigured() {
+    return Boolean(
+        process.env.OPENAI_API_KEY &&
+        process.env.OPENAI_API_KEY.trim()
+    );
+}
 
 
 // -----------------------------
@@ -342,20 +351,32 @@ setInterval(() => {
 
 
 // -----------------------------
-// CHATBOT CONFIG ROUTE
+// CHATBOT CONFIG & TRUSTED SOURCES ROUTES
 // -----------------------------
 app.get("/api/chat/config", (req, res) => {
     res.json({
         name: ASSISTANT_IDENTITY.name,
         fullName: ASSISTANT_IDENTITY.fullName,
         role: ASSISTANT_IDENTITY.role,
-        suggestedPrompts: SUGGESTED_PROMPTS
+        disclaimer: INFORMATIONAL_DISCLAIMER,
+        suggestedPrompts: SUGGESTED_PROMPTS,
+        trustedSources: db.getTrustedFinancialSources()
+    });
+});
+
+app.get("/api/assistant/sources", (req, res) => {
+    const query = req.query.q ? String(req.query.q) : "";
+    const sources = query ? db.searchTrustedFinancialSources(query, 10) : db.getTrustedFinancialSources();
+    return res.json({
+        success: true,
+        sources,
+        disclaimer: INFORMATIONAL_DISCLAIMER
     });
 });
 
 
 // -----------------------------
-// CHATBOT INTERACTION ROUTE
+// CHATBOT INTERACTION ROUTE (OPENAI + TRUSTED SOURCES)
 // -----------------------------
 app.post("/api/chat", async (req, res) => {
     try {
@@ -388,6 +409,21 @@ app.post("/api/chat", async (req, res) => {
         const sanitizedMessage = message.trim();
         const modelName = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+        // Build authenticated user financial summary (without exposing raw credentials or unverified bank policies)
+        let userFinancialContext = null;
+        if (req.session && req.session.userId && !isGuest) {
+            const uid = req.session.userId;
+            const summary = db.getFullWalletSummary(uid);
+            const prefs = db.getUserNotificationPrefs(uid);
+            userFinancialContext = [
+                `Authenticated user: ${req.session.fullName} (@${req.session.username})`,
+                `Combined Wallet Balances — Total: $${summary.combinedWallet.total.toFixed(2)}, Bills: $${summary.combinedWallet.bills.toFixed(2)}, Savings: $${summary.combinedWallet.savings.toFixed(2)}, Spending: $${summary.combinedWallet.spending.toFixed(2)}`,
+                `Saved Deposit Allocation Rules: ${prefs.allocationBillsPct}% Bills, ${prefs.allocationSavingsPct}% Savings, ${prefs.allocationSpendingPct}% Spending`
+            ].join("\n");
+        }
+
+        const { matchedSources, contextBlock } = buildTrustedSourcesContext(sanitizedMessage, userFinancialContext);
+
         // Try OpenAI Chat Completions
         try {
             if (!process.env.OPENAI_API_KEY) {
@@ -395,11 +431,11 @@ app.post("/api/chat", async (req, res) => {
             }
 
             const messages = [
-                { role: "system", content: SYSTEM_PROMPT }
+                { role: "system", content: `${SYSTEM_PROMPT}\n\n${contextBlock}` }
             ];
 
             // Add authenticated user context or guest boundary
-            if (req.session && req.session.userId) {
+            if (req.session && req.session.userId && !isGuest) {
                 messages.push({
                     role: "system",
                     content: `The user is securely authenticated as ${req.session.fullName} (username: @${req.session.username}).`
@@ -435,25 +471,32 @@ app.post("/api/chat", async (req, res) => {
                 temperature: 0.7
             });
 
-            const reply = completion.choices[0]?.message?.content?.trim() || "";
+            let reply = completion.choices[0]?.message?.content?.trim() || "";
+            if (!reply.toLowerCase().includes("disclaimer")) {
+                reply += `\n\n*${INFORMATIONAL_DISCLAIMER}*`;
+            }
 
             return res.json({
                 success: true,
                 mode: "openai",
                 model: modelName,
-                reply: reply
+                reply: reply,
+                sources: matchedSources,
+                disclaimer: INFORMATIONAL_DISCLAIMER
             });
 
         } catch (openAIError) {
             console.log("Penny OpenAI Chat Error:", openAIError.message);
 
-            // Resilient honest fallback mode
-            const honestReply = getHonestFallbackResponse(sanitizedMessage, Boolean(isGuest));
+            // Resilient honest fallback mode with trusted sources
+            const honestReply = getHonestFallbackResponse(sanitizedMessage, Boolean(isGuest), userFinancialContext);
 
             return res.json({
                 success: true,
                 mode: "demo",
                 reply: honestReply,
+                sources: matchedSources,
+                disclaimer: INFORMATIONAL_DISCLAIMER,
                 note: "Penny is operating in demo mode due to OpenAI API status.",
                 errorDetail: openAIError.status === 429 ? "API quota exceeded" : openAIError.message
             });
@@ -1335,6 +1378,29 @@ function handleUpdateNotificationPrefs(req, res) {
             }
         }
 
+        if (
+            body.allocationBillsPct !== undefined ||
+            body.allocationSavingsPct !== undefined ||
+            body.allocationSpendingPct !== undefined
+        ) {
+            const current = db.getUserNotificationPrefs(userId);
+            const bPct = Number(body.allocationBillsPct ?? current.allocationBillsPct);
+            const sPct = Number(body.allocationSavingsPct ?? current.allocationSavingsPct);
+            const spPct = Number(body.allocationSpendingPct ?? current.allocationSpendingPct);
+            if (isNaN(bPct) || isNaN(sPct) || isNaN(spPct) || bPct < 0 || sPct < 0 || spPct < 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Allocation percentages must be valid non-negative numbers."
+                });
+            }
+            if (Math.abs(bPct + sPct + spPct - 100) > 0.5) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Bills %, Savings %, and Spending % must add up to 100%."
+                });
+            }
+        }
+
         const updatedPrefs = db.setUserNotificationPrefs(userId, body);
         return res.json({
             success: true,
@@ -2027,6 +2093,338 @@ function handleDismissDetectedBill(req, res) {
 app.delete("/api/bills/detected/:id", requireAuth, handleDismissDetectedBill);
 app.post("/api/bills/detected/:id/dismiss", requireAuth, handleDismissDetectedBill);
 
+// -----------------------------
+// WEEKLY AI FINANCIAL INSIGHTS ROUTES
+// -----------------------------
+
+async function generateOpenAIWeeklySummaryInsight(reportMetrics) {
+    if (!isOpenAIConfigured()) return null;
+
+    const prompt = `
+You are Penny, FundIQ's AI financial assistant.
+Analyze this user's weekly financial summary (${reportMetrics.weekStart} to ${reportMetrics.weekEnd}):
+- Total spent this week: $${Number(reportMetrics.totalSpent || 0).toFixed(2)}
+- Previous week spent: $${Number(reportMetrics.prevWeekSpent || 0).toFixed(2)} (${reportMetrics.spendingChangePct}% change)
+- Total deposited this week: $${Number(reportMetrics.totalDeposited || 0).toFixed(2)}
+- Spending breakdown: ${JSON.stringify(reportMetrics.spendingBreakdown || [])}
+- Category comparison vs. last week: ${JSON.stringify(reportMetrics.categoryComparison || [])}
+- Current combined balances: ${JSON.stringify((reportMetrics.accountBalances && reportMetrics.accountBalances.combinedWallet) || {})}
+
+Return ONLY valid JSON with:
+{
+  "insightsText": "2-3 sentence friendly, accurate summary of their week",
+  "suggestions": ["actionable suggestion 1", "actionable suggestion 2"]
+}
+`;
+    const completion = await client.chat.completions.create({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 350,
+        temperature: 0.3
+    });
+    const raw = (completion.choices[0]?.message?.content || "").replace(/```json/g, "").replace(/```/g, "").trim();
+    return JSON.parse(raw);
+}
+
+app.get("/api/insights/weekly", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const reports = db.getWeeklyFinancialReportsByUser(userId, 12);
+        const insights = db.getAiFinancialInsightsByUser(userId, 12);
+        const prefs = db.getUserNotificationPrefs(userId);
+        return res.json({
+            success: true,
+            latestReport: reports[0] || null,
+            reports,
+            insights,
+            schedule: {
+                enabled: prefs.weeklyReportEnabled,
+                deliveryMethod: prefs.weeklyDeliveryMethod,
+                deliveryTime: prefs.weeklyDeliveryTime,
+                timezone: prefs.timezone,
+                dayOfWeek: "Sunday"
+            }
+        });
+    } catch (err) {
+        console.error("Get weekly insights error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to load weekly financial insights."
+        });
+    }
+});
+
+app.post("/api/insights/weekly/generate", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const body = req.body || {};
+        const result = await emailService.generateWeeklyFinancialReport(userId, {
+            referenceDate: body.referenceDate || null,
+            includeSampleData: Boolean(body.includeSampleData),
+            sendNotification: Boolean(body.sendNotification),
+            deliveryMethod: body.deliveryMethod || null,
+            aiGenerator: isOpenAIConfigured() ? generateOpenAIWeeklySummaryInsight : null
+        });
+        const reports = db.getWeeklyFinancialReportsByUser(userId, 12);
+        const noActivity = result.reason === "NO_ACTIVITY";
+        return res.json({
+            success: true,
+            noActivity,
+            message: noActivity
+                ? "No weekly insights yet — connect a bank account or add payments/deposits manually first."
+                : body.sendNotification
+                ? "Weekly AI Financial Summary generated and sent via your selected notification method."
+                : "Weekly AI Financial Summary generated.",
+            report: result.report,
+            notification: result.notification,
+            reports
+        });
+    } catch (err) {
+        console.error("Generate weekly insight error:", err);
+        return res.status(500).json({
+            success: false,
+            error: err.message || "Failed to generate weekly financial summary."
+        });
+    }
+});
+
+// -----------------------------
+// AI DEPOSIT NOTIFICATIONS & PROPOSED ALLOCATIONS ROUTES
+// -----------------------------
+
+async function computeRecommendedDepositSplit(userId, depositAmount, sourceDescription = "Direct Deposit") {
+    const uid = Number(userId);
+    const prefs = db.getUserNotificationPrefs(uid);
+    const billsPct = Number(prefs.allocationBillsPct) || 50;
+    const savingsPct = Number(prefs.allocationSavingsPct) || 30;
+    const spendingPct = Math.max(0, 100 - billsPct - savingsPct);
+
+    const recBills = Math.round(((depositAmount * billsPct) / 100) * 100) / 100;
+    const recSavings = Math.round(((depositAmount * savingsPct) / 100) * 100) / 100;
+    const recSpending = Math.round((depositAmount - recBills - recSavings) * 100) / 100;
+
+    let aiExplanation = `Based on your saved FundIQ allocation preferences (${billsPct}% Bills, ${savingsPct}% Savings, ${spendingPct}% Spending), Penny recommends assigning $${recBills.toFixed(2)} to Bills, $${recSavings.toFixed(2)} to Savings, and $${recSpending.toFixed(2)} to Spending. Your actual balances remain unchanged until you approve this proposed split.`;
+
+    if (isOpenAIConfigured()) {
+        try {
+            const prompt = `
+You are Penny, FundIQ's AI assistant.
+A user received a deposit of $${depositAmount.toFixed(2)} (${sourceDescription}).
+Based on their saved allocation rules (${billsPct}% Bills, ${savingsPct}% Savings, ${spendingPct}% Spending), the proposed split is:
+- Bills: $${recBills.toFixed(2)}
+- Savings: $${recSavings.toFixed(2)}
+- Spending: $${recSpending.toFixed(2)}
+Write a 2-sentence encouraging explanation referencing CFPB/MyMoney.gov best practices and reminding them that this is a proposed split awaiting their approval.
+`;
+            const completion = await client.chat.completions.create({
+                model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 180,
+                temperature: 0.3
+            });
+            const aiNote = completion.choices[0]?.message?.content?.trim();
+            if (aiNote) aiExplanation = aiNote;
+        } catch (_) {}
+    }
+
+    return {
+        recommendedBills: recBills,
+        recommendedSavings: recSavings,
+        recommendedSpending: recSpending,
+        aiExplanation,
+        rulesUsed: { billsPct, savingsPct, spendingPct }
+    };
+}
+
+app.get("/api/deposits/allocations", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const allocations = db.getDepositAllocationsByUser(userId, Number(req.query.limit) || 30);
+        const prefs = db.getUserNotificationPrefs(userId);
+        const summary = db.getFullWalletSummary(userId);
+        const deliveryHistory = db.getNotificationDeliveryHistoryByUser(userId, 40);
+        return res.json({
+            success: true,
+            allocations,
+            pendingAllocations: allocations.filter((a) => a.status === "proposed"),
+            allocationRules: {
+                billsPct: prefs.allocationBillsPct,
+                savingsPct: prefs.allocationSavingsPct,
+                spendingPct: prefs.allocationSpendingPct
+            },
+            actualBalances: {
+                manualWallet: summary.manualWallet,
+                bankBalances: summary.bankBalances,
+                combinedWallet: summary.combinedWallet
+            },
+            deliveryHistory
+        });
+    } catch (err) {
+        console.error("Get deposit allocations error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to load deposit allocations."
+        });
+    }
+});
+
+app.post("/api/deposits/simulate", requireAuth, async (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const user = db.findUserById(userId);
+        const body = req.body || {};
+        const depositAmount = Number(body.depositAmount ?? body.amount);
+
+        if (isNaN(depositAmount) || depositAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: "Please enter a valid deposit amount greater than $0.00."
+            });
+        }
+
+        const depositDate =
+            body.depositDate && /^\d{4}-\d{2}-\d{2}$/.test(String(body.depositDate))
+                ? String(body.depositDate)
+                : new Date().toISOString().split("T")[0];
+        const sourceDescription = String(body.sourceDescription || body.source || "Direct Deposit").trim();
+        const accountName = String(body.accountName || "Connected Checking Account").trim();
+        const depositKey = body.depositKey ? String(body.depositKey) : `dep_${userId}_${Date.now()}_${Math.round(depositAmount * 100)}`;
+
+        const split = await computeRecommendedDepositSplit(userId, depositAmount, sourceDescription);
+
+        const allocation = db.createDepositAllocation(userId, {
+            depositKey,
+            accountId: body.accountId || null,
+            accountName,
+            depositAmount,
+            depositDate,
+            sourceDescription,
+            recommendedBills: split.recommendedBills,
+            recommendedSavings: split.recommendedSavings,
+            recommendedSpending: split.recommendedSpending,
+            aiExplanation: split.aiExplanation
+        });
+
+        let notificationResult = null;
+        if (user) {
+            notificationResult = await emailService.sendProposedDepositAllocationNotification(user, allocation);
+        }
+
+        const refreshedAllocation = db.getDepositAllocationById(userId, allocation.id) || allocation;
+        const allAllocations = db.getDepositAllocationsByUser(userId, 30);
+        const summary = db.getFullWalletSummary(userId);
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Deposit detected! A proposed AI allocation has been created and sent to your notifications. Your actual Wallet balances remain unchanged until you approve the allocation.",
+            allocation: refreshedAllocation,
+            allocations: allAllocations,
+            pendingAllocations: allAllocations.filter((a) => a.status === "proposed"),
+            actualBalances: {
+                manualWallet: summary.manualWallet,
+                bankBalances: summary.bankBalances,
+                combinedWallet: summary.combinedWallet
+            },
+            notification: notificationResult
+        });
+    } catch (err) {
+        const status = err.status || 500;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to process deposit notification."
+        });
+    }
+});
+
+app.put("/api/deposits/allocations/:id", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const updated = db.updateProposedDepositAllocation(userId, req.params.id, req.body || {});
+        const allAllocations = db.getDepositAllocationsByUser(userId, 30);
+        return res.json({
+            success: true,
+            message: "Proposed deposit allocation updated. Click Approve when ready to apply it to your Wallet.",
+            allocation: updated,
+            allocations: allAllocations,
+            pendingAllocations: allAllocations.filter((a) => a.status === "proposed")
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to update proposed deposit allocation."
+        });
+    }
+});
+
+app.post("/api/deposits/allocations/:id/approve", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const result = db.approveDepositAllocation(userId, req.params.id, req.body || null);
+        const allAllocations = db.getDepositAllocationsByUser(userId, 30);
+        return res.json({
+            success: true,
+            message: "Deposit allocation approved and applied to your FundIQ Wallet!",
+            allocation: result.allocation,
+            allocations: allAllocations,
+            pendingAllocations: allAllocations.filter((a) => a.status === "proposed"),
+            wallet: result.summary.wallet,
+            manualWallet: result.summary.manualWallet,
+            bankBalances: result.summary.bankBalances,
+            combinedWallet: result.summary.combinedWallet
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to approve deposit allocation."
+        });
+    }
+});
+
+app.post("/api/deposits/allocations/:id/reject", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const rejected = db.rejectDepositAllocation(userId, req.params.id);
+        const allAllocations = db.getDepositAllocationsByUser(userId, 30);
+        return res.json({
+            success: true,
+            message: "Proposed deposit allocation dismissed. Your Wallet balances were not changed.",
+            allocation: rejected,
+            allocations: allAllocations,
+            pendingAllocations: allAllocations.filter((a) => a.status === "proposed")
+        });
+    } catch (err) {
+        const status = err.status || 400;
+        return res.status(status).json({
+            success: false,
+            error: err.message || "Failed to dismiss deposit allocation."
+        });
+    }
+});
+
+app.get("/api/notifications/history", requireAuth, (req, res) => {
+    try {
+        const userId = req.session.userId;
+        const deliveryHistory = db.getNotificationDeliveryHistoryByUser(userId, Number(req.query.limit) || 50);
+        const emailNotifications = db.getUserEmailNotifications(userId, 30);
+        const depositAllocations = db.getDepositAllocationsByUser(userId, 30);
+        return res.json({
+            success: true,
+            deliveryHistory,
+            emailNotifications,
+            depositAllocations
+        });
+    } catch (err) {
+        console.error("Get notification history error:", err);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to load notification history."
+        });
+    }
+});
+
 // Ensure any unmatched /api/* route returns a JSON 404 response (never an HTML 404 page)
 app.use("/api", (req, res) => {
     return res.status(404).json({
@@ -2042,6 +2440,7 @@ app.use("/api", (req, res) => {
 
 if (require.main === module) {
     emailService.startPaymentReminderScheduler();
+    emailService.startWeeklyInsightsScheduler();
     const httpServer = app.listen(PORT, () => {
         console.log(
             `FundIQ is running at http://localhost:${PORT} (Plaid: ${isPlaidConfigured() ? getPlaidEnvName() : "unconfigured"}, Email: ${emailService.getEmailConfig().provider})`

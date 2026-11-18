@@ -247,7 +247,46 @@ function renderBucketSubLists(savTotal, bilTotal, spdTotal) {
         });
 
         container.innerHTML = html;
+
+        const labelEl = document.getElementById(`dropdownLabel_${bucket}`);
+        if (labelEl) {
+            labelEl.textContent = `Subcategories (${items.length})`;
+        }
     });
+}
+
+// Independent dropdown toggle for Savings, Bills, and Spending subcategories (hidden by default)
+const bucketDropdownExpandedState = {
+    savings: false,
+    bills: false,
+    spending: false
+};
+
+function toggleBucketDropdown(bucket, forceExpand = null) {
+    const key = String(bucket || "").toLowerCase();
+    if (!["savings", "bills", "spending"].includes(key)) return;
+
+    const bodyEl = document.getElementById(`dropdownBody_${key}`);
+    const btnEl = document.getElementById(`dropdownBtn_${key}`);
+    const cardEl = document.getElementById(`walletCard_${key}`);
+    if (!bodyEl || !btnEl) return;
+
+    const nextExpanded = forceExpand !== null ? Boolean(forceExpand) : !bucketDropdownExpandedState[key];
+    bucketDropdownExpandedState[key] = nextExpanded;
+
+    if (nextExpanded) {
+        bodyEl.classList.remove("is-collapsed");
+        bodyEl.classList.add("is-expanded");
+        bodyEl.style.display = "block";
+        btnEl.setAttribute("aria-expanded", "true");
+        if (cardEl) cardEl.classList.add("dropdown-open");
+    } else {
+        bodyEl.classList.remove("is-expanded");
+        bodyEl.classList.add("is-collapsed");
+        bodyEl.style.display = "none";
+        btnEl.setAttribute("aria-expanded", "false");
+        if (cardEl) cardEl.classList.remove("dropdown-open");
+    }
 }
 
 function openSubcategoryModal({ mode, bucket, id = "", name = "", amount = 0 }) {
@@ -290,6 +329,7 @@ function closeSubcategoryModal() {
 }
 
 function addBucketSubItem(bucket) {
+    toggleBucketDropdown(bucket, true);
     openSubcategoryModal({
         mode: "add",
         bucket,
@@ -701,6 +741,173 @@ async function executeClearWallet() {
     }
 }
 
+// =============================================================
+// PENDING PROPOSED DEPOSIT ALLOCATIONS (WALLET REVIEW & APPROVAL)
+// =============================================================
+
+let pendingDepositAllocations = [];
+
+async function loadPendingDepositAllocations() {
+    try {
+        const res = await fetch(resolveApiUrl("/api/deposits/allocations"), {
+            credentials: "include",
+            cache: "no-store"
+        });
+        if (!res.ok) return;
+        const data = await safeParseJson(res);
+        if (!data.success) return;
+        pendingDepositAllocations = Array.isArray(data.pendingAllocations) ? data.pendingAllocations : [];
+        renderWalletPendingDeposits();
+    } catch (_) {}
+}
+
+function renderWalletPendingDeposits() {
+    const panel = document.getElementById("walletPendingDepositsPanel");
+    const listEl = document.getElementById("walletPendingDepositsList");
+    if (!panel || !listEl) return;
+
+    if (!Array.isArray(pendingDepositAllocations) || pendingDepositAllocations.length === 0) {
+        panel.style.display = "none";
+        listEl.innerHTML = "";
+        return;
+    }
+
+    panel.style.display = "block";
+    listEl.innerHTML = pendingDepositAllocations
+        .map((alloc) => {
+            const actualComb = (alloc.balancesBefore && alloc.balancesBefore.combinedWallet) || getCombinedTotals();
+            const propComb = (alloc.proposedBalances && alloc.proposedBalances.combinedWallet) || {
+                bills: actualComb.bills + alloc.proposed.bills,
+                savings: actualComb.savings + alloc.proposed.savings,
+                spending: actualComb.spending + alloc.proposed.spending,
+                total: actualComb.total + alloc.depositAmount
+            };
+
+            return `
+                <div class="proposed-alloc-card" style="background:#FFFFFF; border:1px solid #DDD6FE; border-radius:12px; padding:14px 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                        <div>
+                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <strong style="font-size:15px; color:#111827;">${formatMoney(alloc.depositAmount)} — ${escapeHtml(alloc.sourceDescription)}</strong>
+                                <span class="pred-status-pill predicted">Proposed Split (Not Applied Yet)</span>
+                            </div>
+                            <div style="font-size:12px; color:#6B7280; margin-top:3px;">
+                                Account: ${escapeHtml(alloc.accountName)} • Date: ${escapeHtml(alloc.depositDate)}
+                            </div>
+                            <div style="font-size:12px; color:#4B5563; margin-top:6px;">
+                                ${escapeHtml(alloc.aiExplanation)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-top:12px;">
+                        <div>
+                            <label style="font-size:11px; font-weight:700; color:#374151; display:block; margin-bottom:3px;">Proposed Bills ($)</label>
+                            <input type="number" id="wPropBills_${alloc.id}" value="${alloc.proposed.bills.toFixed(2)}" min="0" step="0.01" style="width:100%; padding:6px 8px; font-size:13px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; font-weight:700; color:#374151; display:block; margin-bottom:3px;">Proposed Savings ($)</label>
+                            <input type="number" id="wPropSavings_${alloc.id}" value="${alloc.proposed.savings.toFixed(2)}" min="0" step="0.01" style="width:100%; padding:6px 8px; font-size:13px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; font-weight:700; color:#374151; display:block; margin-bottom:3px;">Proposed Spending ($)</label>
+                            <input type="number" id="wPropSpending_${alloc.id}" value="${alloc.proposed.spending.toFixed(2)}" min="0" step="0.01" style="width:100%; padding:6px 8px; font-size:13px;">
+                        </div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:10px; border-top:1px solid #F3F4F6; font-size:11.5px; color:#4B5563;">
+                        <div>
+                            <strong>Actual Total Now:</strong> ${formatMoney(actualComb.total)}
+                            &nbsp;→&nbsp;
+                            <strong style="color:#5B21B6;">Proposed Total After Approval:</strong> ${formatMoney(propComb.total)}
+                            (Bills: ${formatMoney(propComb.bills)}, Savings: ${formatMoney(propComb.savings)}, Spending: ${formatMoney(propComb.spending)})
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="btn-mini-action" onclick="saveProposedSplitFromWallet(${alloc.id})">Update Amounts</button>
+                            <button type="button" class="btn-purple-pill" style="padding:6px 14px; font-size:12px;" onclick="approveProposedSplitFromWallet(${alloc.id})">Approve Allocation ✓</button>
+                            <button type="button" class="btn-mini-action danger" onclick="rejectProposedSplitFromWallet(${alloc.id})">Dismiss</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        })
+        .join("");
+}
+
+async function saveProposedSplitFromWallet(allocId) {
+    const bills = Number(document.getElementById(`wPropBills_${allocId}`)?.value || 0);
+    const savings = Number(document.getElementById(`wPropSavings_${allocId}`)?.value || 0);
+    const spending = Number(document.getElementById(`wPropSpending_${allocId}`)?.value || 0);
+
+    try {
+        const res = await fetch(resolveApiUrl(`/api/deposits/allocations/${allocId}`), {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bills, savings, spending })
+        });
+        const data = await safeParseJson(res);
+        if (!res.ok || !data.success) {
+            alert(data.error || "Could not update proposed split.");
+            return;
+        }
+        pendingDepositAllocations = Array.isArray(data.pendingAllocations) ? data.pendingAllocations : [];
+        renderWalletPendingDeposits();
+        const notice = document.getElementById("walletNotice");
+        if (notice) {
+            notice.innerHTML = `<strong>✓ Proposed Amounts Updated:</strong> ${escapeHtml(data.message)}`;
+            notice.style.display = "block";
+        }
+    } catch (err) {
+        console.error("saveProposedSplitFromWallet error:", err);
+    }
+}
+
+async function approveProposedSplitFromWallet(allocId) {
+    const bills = Number(document.getElementById(`wPropBills_${allocId}`)?.value || 0);
+    const savings = Number(document.getElementById(`wPropSavings_${allocId}`)?.value || 0);
+    const spending = Number(document.getElementById(`wPropSpending_${allocId}`)?.value || 0);
+
+    try {
+        const res = await fetch(resolveApiUrl(`/api/deposits/allocations/${allocId}/approve`), {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bills, savings, spending })
+        });
+        const data = await safeParseJson(res);
+        if (!res.ok || !data.success) {
+            alert(data.error || "Could not approve allocation.");
+            return;
+        }
+        applyServerWalletSummary(data);
+        pendingDepositAllocations = Array.isArray(data.pendingAllocations) ? data.pendingAllocations : [];
+        renderWalletPendingDeposits();
+        const notice = document.getElementById("walletNotice");
+        if (notice) {
+            notice.innerHTML = `<strong>✓ Deposit Allocation Approved:</strong> ${escapeHtml(data.message)}`;
+            notice.style.display = "block";
+        }
+    } catch (err) {
+        console.error("approveProposedSplitFromWallet error:", err);
+    }
+}
+
+async function rejectProposedSplitFromWallet(allocId) {
+    try {
+        const res = await fetch(resolveApiUrl(`/api/deposits/allocations/${allocId}/reject`), {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" }
+        });
+        const data = await safeParseJson(res);
+        if (res.ok && data.success) {
+            pendingDepositAllocations = Array.isArray(data.pendingAllocations) ? data.pendingAllocations : [];
+            renderWalletPendingDeposits();
+        }
+    } catch (_) {}
+}
+
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         closeClearWalletModal();
@@ -711,3 +918,4 @@ document.addEventListener("keydown", (e) => {
 
 updateWallet();
 syncWalletFromServer();
+loadPendingDepositAllocations();

@@ -47,10 +47,10 @@
         </div>
 
         <div class="sidebar-bottom">
-            <div class="sidebar-insight-card">
+            <div class="sidebar-insight-card" style="display:none;">
                 <div class="insight-icon-box" aria-hidden="true">✦</div>
                 <div class="insight-title">Weekly insight</div>
-                <div class="insight-text">You spent 12% less on dining this week.</div>
+                <div class="insight-text"></div>
             </div>
 
             <a href="profile.html" class="sidebar-user-card" title="View Profile &amp; Financial Connections">
@@ -254,6 +254,55 @@
         </section>
 
         <div id="quickExpenseNotice" class="auth-success-msg" style="display:none; margin-top: 14px;" role="status"></div>
+
+        <!-- AI Deposit Detection, Proposed Allocations & Notification History -->
+        <section id="depositAllocationsSection" class="conn-panel-card" style="margin-top: 22px;" aria-label="AI Deposit Notifications and Proposed Allocations">
+            <div class="conn-panel-header">
+                <div>
+                    <span class="fiq-eyebrow">AI DEPOSIT NOTIFICATIONS &amp; PROPOSED SPLITS</span>
+                    <h3>Detected Deposits &amp; Proposed Allocations</h3>
+                    <p>When a deposit is detected, Penny calculates a proposed split using your saved rules (<strong id="savedRulesLabel">50% Bills / 30% Savings / 20% Spending</strong>) and notifies you via Email/SMS. <strong>Actual balances only update after you approve the allocation.</strong></p>
+                </div>
+                <a href="profile.html" class="btn-outline-pill" style="text-decoration:none; font-size:12px;">Edit Saved Rules</a>
+            </div>
+
+            <!-- Record / Simulate Incoming Deposit -->
+            <form id="simulateDepositForm" class="quick-expense-form" style="margin-top: 14px; padding: 14px; background: #F9FAFB; border-radius: 12px; border: 1px solid #E5E7EB;">
+                <div class="qe-field-group">
+                    <label for="simDepositAmount">Deposit Amount ($)</label>
+                    <input type="number" id="simDepositAmount" value="1000" min="0.01" step="0.01" required>
+                </div>
+                <div class="qe-field-group">
+                    <label for="simDepositSource">Deposit Source</label>
+                    <input type="text" id="simDepositSource" value="Payroll Direct Deposit" placeholder="e.g., Payroll Direct Deposit" required>
+                </div>
+                <div class="qe-field-group">
+                    <label for="simDepositAccount">Connected Account</label>
+                    <input type="text" id="simDepositAccount" value="Connected Checking Account" placeholder="e.g., Chase Total Checking">
+                </div>
+                <button type="submit" id="simDepositBtn" class="btn-purple-pill">
+                    + Detect Deposit &amp; Notify Me
+                </button>
+            </form>
+
+            <div id="depositAllocationStatusBanner" class="plaid-alert-banner" style="display:none; margin-top:12px;" role="status" aria-live="polite"></div>
+
+            <!-- Pending Proposed Allocations -->
+            <div style="margin-top: 18px;">
+                <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #5B21B6; margin-bottom: 10px;">
+                    ⏳ Pending Proposed Allocations (Awaiting Your Review &amp; Approval)
+                </div>
+                <div id="pendingDepositAllocationsList" style="display:flex; flex-direction:column; gap:12px;"></div>
+            </div>
+
+            <!-- Deposit Notification & Approved Allocation History -->
+            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #F3F4F6;">
+                <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #374151; margin-bottom: 10px;">
+                    📜 Deposit Notification &amp; Allocation History
+                </div>
+                <div id="sorterAllocationHistoryList" class="conn-bills-list"></div>
+            </div>
+        </section>
 
     </main>
 

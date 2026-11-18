@@ -1039,6 +1039,18 @@ function applyPrefsToForm(prefs) {
     const smsDueEl = document.getElementById("prefSmsPaymentDueEnabled");
     const smsDepEl = document.getElementById("prefSmsDepositEnabled");
 
+    const weeklyEnabledEl = document.getElementById("prefWeeklyReportEnabled");
+    const weeklyMethodEl = document.getElementById("prefWeeklyDeliveryMethod");
+    const weeklyTimeEl = document.getElementById("prefWeeklyDeliveryTime");
+    const tzEl = document.getElementById("prefTimezone");
+
+    const billsPctEl = document.getElementById("prefAllocBillsPct");
+    const savingsPctEl = document.getElementById("prefAllocSavingsPct");
+    const spendingPctEl = document.getElementById("prefAllocSpendingPct");
+
+    const consentEmailEl = document.getElementById("prefConsentEmail");
+    const consentSmsEl = document.getElementById("prefConsentSms");
+
     if (emailEnabledEl) emailEnabledEl.checked = Boolean(prefs.emailEnabled);
     if (dueEl) dueEl.checked = Boolean(prefs.paymentDueEnabled !== undefined ? prefs.paymentDueEnabled : prefs.notifyPaymentDue);
     if (depEl) depEl.checked = Boolean(prefs.depositEnabled !== undefined ? prefs.depositEnabled : prefs.notifyDepositMade);
@@ -1056,6 +1068,36 @@ function applyPrefsToForm(prefs) {
     }
     if (smsDepEl && prefs.smsDepositEnabled !== undefined) {
         smsDepEl.checked = Boolean(prefs.smsDepositEnabled);
+    }
+
+    if (weeklyEnabledEl && prefs.weeklyReportEnabled !== undefined) {
+        weeklyEnabledEl.checked = Boolean(prefs.weeklyReportEnabled);
+    }
+    if (weeklyMethodEl && prefs.weeklyDeliveryMethod) {
+        weeklyMethodEl.value = String(prefs.weeklyDeliveryMethod);
+    }
+    if (weeklyTimeEl && prefs.weeklyDeliveryTime) {
+        weeklyTimeEl.value = String(prefs.weeklyDeliveryTime);
+    }
+    if (tzEl && prefs.timezone) {
+        tzEl.value = String(prefs.timezone);
+    }
+
+    if (billsPctEl && prefs.allocationBillsPct !== undefined) {
+        billsPctEl.value = String(prefs.allocationBillsPct);
+    }
+    if (savingsPctEl && prefs.allocationSavingsPct !== undefined) {
+        savingsPctEl.value = String(prefs.allocationSavingsPct);
+    }
+    if (spendingPctEl && prefs.allocationSpendingPct !== undefined) {
+        spendingPctEl.value = String(prefs.allocationSpendingPct);
+    }
+
+    if (consentEmailEl && prefs.consentEmail !== undefined) {
+        consentEmailEl.checked = Boolean(prefs.consentEmail);
+    }
+    if (consentSmsEl && prefs.consentSms !== undefined) {
+        consentSmsEl.checked = Boolean(prefs.consentSms);
     }
 
     const modeBadge = document.getElementById("notifModeBadge");
@@ -1107,6 +1149,17 @@ if (notifFormEl) {
             }
         }
 
+        const bPct = Number(document.getElementById("prefAllocBillsPct")?.value ?? 50);
+        const sPct = Number(document.getElementById("prefAllocSavingsPct")?.value ?? 30);
+        const spPct = Number(document.getElementById("prefAllocSpendingPct")?.value ?? 20);
+        if (Math.abs(bPct + sPct + spPct - 100) > 0.5) {
+            showNotifStatusBanner(
+                `<strong>Validation Error:</strong> Bills % (${bPct}%), Savings % (${sPct}%), and Spending % (${spPct}%) must add up to 100%.`,
+                "error"
+            );
+            return;
+        }
+
         const payload = {
             emailEnabled: Boolean(document.getElementById("prefEmailEnabled")?.checked),
             paymentDueEnabled: Boolean(document.getElementById("prefPaymentDueEnabled")?.checked),
@@ -1120,7 +1173,16 @@ if (notifFormEl) {
             phoneNumber: phoneVal,
             smsPaymentDueEnabled: Boolean(document.getElementById("prefSmsPaymentDueEnabled")?.checked),
             smsDepositEnabled: Boolean(document.getElementById("prefSmsDepositEnabled")?.checked),
-            smsPaymentSubmittedEnabled: Boolean(document.getElementById("prefSmsDepositEnabled")?.checked)
+            smsPaymentSubmittedEnabled: Boolean(document.getElementById("prefSmsDepositEnabled")?.checked),
+            weeklyReportEnabled: Boolean(document.getElementById("prefWeeklyReportEnabled")?.checked),
+            weeklyDeliveryMethod: document.getElementById("prefWeeklyDeliveryMethod")?.value || "email",
+            weeklyDeliveryTime: document.getElementById("prefWeeklyDeliveryTime")?.value || "09:00",
+            timezone: document.getElementById("prefTimezone")?.value || "America/Chicago",
+            allocationBillsPct: bPct,
+            allocationSavingsPct: sPct,
+            allocationSpendingPct: spPct,
+            consentEmail: Boolean(document.getElementById("prefConsentEmail")?.checked),
+            consentSms: Boolean(document.getElementById("prefConsentSms")?.checked)
         };
 
         if (saveBtn) {
@@ -1163,6 +1225,243 @@ if (notifFormEl) {
     });
 }
 
+// =============================================================
+// WEEKLY AI FINANCIAL INSIGHTS & NOTIFICATION HISTORY (PROFILE PAGE)
+// =============================================================
+
+function showWeeklyReportBanner(msg, type = "info") {
+    const el = document.getElementById("weeklyReportStatusBanner");
+    if (!el) return;
+    if (!msg) {
+        el.style.display = "none";
+        el.innerHTML = "";
+        return;
+    }
+    el.className = `plaid-alert-banner ${type}`;
+    el.innerHTML = msg;
+    el.style.display = "block";
+}
+
+function renderWeeklyReportCard(report, schedule) {
+    const area = document.getElementById("weeklyReportContentArea");
+    const subtext = document.getElementById("weeklyScheduleSubtext");
+    if (!area) return;
+
+    if (subtext && schedule) {
+        const methodLabel =
+            schedule.deliveryMethod === "both"
+                ? "Email & SMS"
+                : schedule.deliveryMethod === "sms"
+                ? "SMS Text Message"
+                : "Email";
+        subtext.innerHTML = `Scheduled every <strong>Sunday at ${escapeHtml(schedule.deliveryTime || "09:00")} (${escapeHtml(schedule.timezone || "America/Chicago")})</strong> via <strong>${methodLabel}</strong>.`;
+    }
+
+    const hasReportActivity =
+        report &&
+        ((Number(report.totalSpent) || 0) > 0 ||
+            (Number(report.prevWeekSpent) || 0) > 0 ||
+            (Number(report.totalDeposited) || 0) > 0 ||
+            (report.accountBalances &&
+                Array.isArray(report.accountBalances.connectedAccounts) &&
+                report.accountBalances.connectedAccounts.length > 0));
+
+    if (!report || !hasReportActivity) {
+        area.innerHTML = `<p style="font-size:13px; color:#6B7280;">No weekly insights yet. Connect your bank account or add payments and deposits manually to generate your Weekly AI Financial Summary.</p>`;
+        return;
+    }
+
+    const changeColor = report.spendingChangePct < 0 ? "#059669" : report.spendingChangePct > 0 ? "#DC2626" : "#4B5563";
+    const changeLabel =
+        report.spendingChangePct < 0
+            ? `↓ ${Math.abs(report.spendingChangePct)}% vs. last week (${formatMoney(report.prevWeekSpent)})`
+            : report.spendingChangePct > 0
+            ? `↑ +${report.spendingChangePct}% vs. last week (${formatMoney(report.prevWeekSpent)})`
+            : `0% change vs. last week (${formatMoney(report.prevWeekSpent)})`;
+
+    const comb = (report.accountBalances && report.accountBalances.combinedWallet) || {
+        bills: 0,
+        savings: 0,
+        spending: 0,
+        total: 0
+    };
+
+    const breakdownHtml =
+        Array.isArray(report.spendingBreakdown) && report.spendingBreakdown.length > 0
+            ? report.spendingBreakdown
+                  .map(
+                      (b) => `
+                <div style="display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0; border-bottom:1px solid #F3F4F6;">
+                    <span>${escapeHtml(b.category)}</span>
+                    <strong>${formatMoney(b.amount)} (${b.sharePct}%)</strong>
+                </div>
+            `
+                  )
+                  .join("")
+            : `<div style="font-size:12.5px; color:#6B7280;">No categorized expenses recorded this week.</div>`;
+
+    const comparisonHtml =
+        Array.isArray(report.categoryComparison) && report.categoryComparison.length > 0
+            ? report.categoryComparison
+                  .map((c) => {
+                      const badge =
+                          c.direction === "less"
+                              ? `<span style="color:#059669; font-weight:700;">Spent Less (${formatMoney(c.diffAmount)} / ${c.changePct}%)</span>`
+                              : c.direction === "more"
+                              ? `<span style="color:#DC2626; font-weight:700;">Spent More (+${formatMoney(c.diffAmount)} / +${c.changePct}%)</span>`
+                              : `<span style="color:#6B7280;">Unchanged (${formatMoney(c.currentAmount)})</span>`;
+                      return `
+                    <div style="display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0; border-bottom:1px solid #F3F4F6;">
+                        <span>${escapeHtml(c.category)}</span>
+                        ${badge}
+                    </div>
+                `;
+                  })
+                  .join("")
+            : `<div style="font-size:12.5px; color:#6B7280;">No prior-week category comparison available.</div>`;
+
+    const suggestionsHtml =
+        Array.isArray(report.aiSuggestions) && report.aiSuggestions.length > 0
+            ? report.aiSuggestions.map((s) => `<li style="margin-bottom:5px;">${escapeHtml(s)}</li>`).join("")
+            : `<li>Maintain your emergency savings and review upcoming recurring bills on the Calendar.</li>`;
+
+    area.innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:12px; margin-bottom:16px;">
+            <div style="padding:14px; border-radius:12px; background:#F9FAFB; border:1px solid #E5E7EB;">
+                <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#6B7280;">Total Spent (${escapeHtml(report.weekStart)} – ${escapeHtml(report.weekEnd)})</div>
+                <div style="font-size:22px; font-weight:800; color:#111827; margin-top:4px;">${formatMoney(report.totalSpent)}</div>
+                <div style="font-size:12px; font-weight:600; color:${changeColor}; margin-top:3px;">${changeLabel}</div>
+            </div>
+            <div style="padding:14px; border-radius:12px; background:#F9FAFB; border:1px solid #E5E7EB;">
+                <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#6B7280;">Total Deposited This Week</div>
+                <div style="font-size:22px; font-weight:800; color:#111827; margin-top:4px;">${formatMoney(report.totalDeposited)}</div>
+                <div style="font-size:12px; color:#4B5563; margin-top:3px;">Tracked across accounts &amp; allocations</div>
+            </div>
+            <div style="padding:14px; border-radius:12px; background:#F9FAFB; border:1px solid #E5E7EB;">
+                <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#6B7280;">Current Combined Balance</div>
+                <div style="font-size:22px; font-weight:800; color:#111827; margin-top:4px;">${formatMoney(comb.total)}</div>
+                <div style="font-size:11.5px; color:#4B5563; margin-top:3px;">Bills: ${formatMoney(comb.bills)} • Savings: ${formatMoney(comb.savings)} • Spending: ${formatMoney(comb.spending)}</div>
+            </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:14px;">
+            <div style="padding:14px; border-radius:10px; background:#FFFFFF; border:1px solid #E5E7EB;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:#374151; margin-bottom:8px;">What You Spent Money On</div>
+                ${breakdownHtml}
+            </div>
+            <div style="padding:14px; border-radius:10px; background:#FFFFFF; border:1px solid #E5E7EB;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:#374151; margin-bottom:8px;">Where You Spent More or Less vs. Last Week</div>
+                ${comparisonHtml}
+            </div>
+        </div>
+
+        <div style="padding:14px 16px; border-radius:12px; background:#FAF5FF; border:1px solid #DDD6FE;">
+            <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:#6D28D9; margin-bottom:6px;">✦ Penny's Weekly AI Financial Insights &amp; Suggestions</div>
+            <p style="font-size:13px; color:#1F2937; margin:0 0 8px;">${escapeHtml(report.aiInsightsText)}</p>
+            <ul style="margin:0; padding-left:18px; font-size:12.5px; color:#374151;">
+                ${suggestionsHtml}
+            </ul>
+        </div>
+    `;
+}
+
+async function loadWeeklyFinancialInsights() {
+    try {
+        const res = await fetch(resolveApiUrl("/api/insights/weekly"), {
+            credentials: "include",
+            cache: "no-store"
+        });
+        if (!res.ok) return;
+        const data = await safeParseJson(res);
+        if (!data.success) return;
+        renderWeeklyReportCard(data.latestReport, data.schedule);
+    } catch (e) {
+        console.log("Weekly financial insights load skipped:", e.message);
+    }
+}
+
+async function triggerWeeklyReportGeneration(sendNotification = false) {
+    const genBtn = document.getElementById("generateWeeklyReportBtn");
+    const sendBtn = document.getElementById("sendWeeklyReportNowBtn");
+    if (genBtn) genBtn.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+
+    showWeeklyReportBanner(
+        sendNotification
+            ? "Generating and sending your Weekly AI Financial Summary..."
+            : "Refreshing your Weekly AI Financial Summary...",
+        "info"
+    );
+
+    try {
+        const res = await fetch(resolveApiUrl("/api/insights/weekly/generate"), {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                includeSampleData: false,
+                sendNotification: Boolean(sendNotification)
+            })
+        });
+        const data = await safeParseJson(res);
+        if (!res.ok || !data.success) {
+            showWeeklyReportBanner(`<strong>Error:</strong> ${escapeHtml(data.error || "Could not generate weekly report.")}`, "error");
+            return;
+        }
+        renderWeeklyReportCard(data.report, null);
+        showWeeklyReportBanner(`<strong>✓ Weekly AI Summary Ready:</strong> ${escapeHtml(data.message)}`, "success");
+        await loadProfileNotificationHistory();
+    } catch (err) {
+        showWeeklyReportBanner(`<strong>Network Error:</strong> Could not generate weekly summary.`, "error");
+    } finally {
+        if (genBtn) genBtn.disabled = false;
+        if (sendBtn) sendBtn.disabled = false;
+    }
+}
+
+async function loadProfileNotificationHistory() {
+    const listEl = document.getElementById("profileNotificationHistoryList");
+    if (!listEl) return;
+
+    try {
+        const res = await fetch(resolveApiUrl("/api/notifications/history"), {
+            credentials: "include",
+            cache: "no-store"
+        });
+        if (!res.ok) return;
+        const data = await safeParseJson(res);
+        if (!data.success) return;
+
+        const items = data.deliveryHistory || [];
+        if (items.length === 0) {
+            listEl.innerHTML = `<div style="font-size:12.5px; color:#6B7280; padding:8px 0;">No notification deliveries logged yet.</div>`;
+            return;
+        }
+
+        listEl.innerHTML = items
+            .slice(0, 12)
+            .map((item) => {
+                const channelBadge = item.channel === "sms" ? "📱 SMS" : "📧 Email";
+                const dt = item.createdAt ? item.createdAt.split("T")[0] : "";
+                return `
+                    <div class="conn-list-item">
+                        <div class="conn-item-left">
+                            <div class="conn-avatar-badge" aria-hidden="true">${item.channel === "sms" ? "S" : "E"}</div>
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <div class="conn-item-title">${escapeHtml(item.subject)}</div>
+                                    <span class="pred-status-pill confirmed">${channelBadge} • ${escapeHtml(item.status)}</span>
+                                </div>
+                                <div class="conn-item-sub">${escapeHtml(item.recipient)} • ${escapeHtml(dt)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            })
+            .join("");
+    } catch (_) {}
+}
+
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         closeDisconnectBankModal();
@@ -1173,4 +1472,6 @@ document.addEventListener("keydown", (e) => {
 renderPlaidSection();
 loadPlaidAccounts(false);
 loadNotificationPreferences();
+loadWeeklyFinancialInsights();
+loadProfileNotificationHistory();
 

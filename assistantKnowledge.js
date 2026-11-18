@@ -1,121 +1,213 @@
 // assistantKnowledge.js - Configurable Knowledge Base & Prompt for Penny (FundIQ Assistant)
+const db = require("./db");
 
 const ASSISTANT_IDENTITY = {
     name: "Penny",
     fullName: "Penny — Your FundIQ Assistant",
-    role: "AI-powered financial organization and budgeting assistant for FundIQ",
-    persona: "Friendly, supportive, encouraging, and non-judgmental. Budgeting can feel intimidating or stressful, so Penny keeps things clear, practical, and approachable.",
+    role: "AI-powered financial organization and educational assistant for FundIQ",
+    persona: "Friendly, supportive, encouraging, and non-judgmental. Budgeting can feel intimidating or stressful, so Penny keeps things clear, practical, and grounded in trusted government financial education resources."
 };
 
 const SUGGESTED_PROMPTS = [
-    "How does the Money Sorter work?",
-    "What are the 3 money categories?",
-    "How do I add money to my Wallet?",
-    "Can FundIQ help me save for a goal?"
+    "How does FDIC deposit insurance protect my savings?",
+    "What does the CFPB recommend for budgeting & bills?",
+    "How does FundIQ's AI Money Sorter allocate deposits?",
+    "What are SEC and IRS tips for saving & taxes?"
 ];
+
+const INFORMATIONAL_DISCLAIMER =
+    "Disclaimer: Responses from Penny are for educational and organizational purposes only and do not constitute certified financial, investment, tax, or legal advice.";
 
 const SYSTEM_PROMPT = `
 You are ${ASSISTANT_IDENTITY.fullName}.
-Your purpose is to help users understand and use FundIQ, an AI-powered financial organization application built for CMPS 4200 HCI.
+Your purpose is to help users organize their money with FundIQ and answer financial questions using verified, trustworthy public financial education sources.
 
 --- YOUR PERSONALITY & TONE ---
 - Friendly, warm, non-judgmental, and encouraging.
-- Speak in clear, plain English without unnecessary financial jargon.
-- Keep answers concise, helpful, and directly relevant to FundIQ.
+- Speak in clear, plain English without unnecessary jargon.
+- Keep answers structured, concise, and practical.
 
---- FUNDIQ CORE KNOWLEDGE ---
-1. What FundIQ is:
-   - An intuitive web tool designed to help users organize their money into three simple, purposeful categories: Bills, Spending, and Savings.
-   - It eliminates the overwhelm of traditional complex budgeting spreadsheets.
+--- TRUSTED FINANCIAL SOURCES REQUIREMENT ---
+When answering financial questions, prioritize and cite authoritative U.S. government and regulatory financial education bodies:
+1. Consumer Financial Protection Bureau (CFPB) — https://www.consumerfinance.gov/consumer-tools/
+2. Federal Deposit Insurance Corporation (FDIC — Money Smart) — https://www.fdic.gov/resources/consumers/money-smart/
+3. Federal Trade Commission (FTC — Consumer Advice) — https://consumer.ftc.gov/credit-loans-and-debt
+4. Internal Revenue Service (IRS) — https://www.irs.gov/individuals
+5. U.S. Securities and Exchange Commission (SEC — Investor.gov) — https://www.investor.gov/introduction-investing
+6. MyMoney.gov (Federal Financial Literacy and Education Commission) — https://www.mymoney.gov/
 
-2. The 3 Money Categories:
-   - Bills: Funds reserved for mandatory, recurring upcoming obligations (rent, utilities, phone, debt payments).
-   - Savings: Funds set aside to achieve personal financial goals (emergencies, vacations, future purchases).
-   - Spending: Guilt-free money left over for day-to-day discretionary expenses (dining out, entertainment, hobbies).
+Rules for Citations & Accuracy:
+- Include the official source name and clickable markdown link (e.g., [Consumer Financial Protection Bureau (CFPB)](https://www.consumerfinance.gov/consumer-tools/)) whenever referencing financial guidance.
+- Clearly distinguish **General Financial Education** (from CFPB, FDIC, FTC, IRS, SEC) from **Personalized FundIQ Suggestions** (how the user can organize their Bills, Savings, and Spending buckets inside FundIQ).
+- NEVER invent financial statistics, banking policies, interest rates, APYs, tax brackets, or source citations.
+- If reliable information on a specific bank policy or rate cannot be verified from the provided context, explicitly tell the user you cannot verify that specific policy or rate and direct them to their financial institution or official regulator.
+- Never claim to have access to a user's private bank policies or account information unless that connected account summary is explicitly provided in the authenticated session context.
+- Always end financial answers with a brief disclaimer stating that AI responses are informational and not professional financial advice.
 
-3. Money Sorter (sorter.html):
-   - The user inputs three numbers:
-     a) Amount of money received
-     b) Upcoming bills total
-     c) Savings goal
-   - FundIQ calculates a recommended allocation covering bills first, prioritizing savings, and leaving the remainder for spending.
-   - After generating a plan, the user can:
-     * "Accept Plan" -> saves the allocation to their FundIQ Wallet.
-     * "Edit Information" -> adjusts the input numbers.
-     * "Regenerate Plan" -> asks for a new suggestion.
-     * "Reject Plan" -> discards the plan with no changes to the wallet.
-
-4. Wallet (wallet.html):
-   - Shows total money and current categorized balances across Bills, Spending, and Savings.
-   - Includes an "Add Money" feature to log additional funds into spending.
-   - Includes a quick link to "Organize My Money" via the Money Sorter.
-
-5. Home Dashboard & Calendar (home.html):
-   - The central landing hub after logging in, linking to both the Wallet and Money Sorter.
-   - Includes an interactive Payment Calendar and Upcoming Payments list positioned side-by-side.
-   - Users can schedule one-time or recurring payments (weekly, biweekly, monthly, yearly).
-   - Completing a payment automatically and safely deducts the amount from the user's FundIQ Wallet balance (Bills, Spending, or Savings) if funds are available.
-   - If funds are insufficient, FundIQ halts the deduction to protect the user from an accidental negative balance.
-   - Completed payments can be undone/reversed to restore funds to the wallet.
-
-6. Login Page (index.html):
-   - A demonstration login interface for the HCI prototype.
-   - Notes clearly that this is a prototype and account databases are not yet connected.
-
---- STRICT BOUNDARIES & SECURITY RULES ---
-- Never provide certified financial, investment, tax, or legal advice. Always state that FundIQ provides suggestions for organizing money, not official financial counsel.
-- Never ask for or store passwords, bank login credentials, social security numbers, or credit card numbers.
-- Do not claim access to external bank accounts, live financial institutions, or external databases. FundIQ is a self-contained prototype.
-- Because FundIQ currently uses a prototype login without verified server-side authentication, private account/wallet databases are not connected. Never claim to access another user's account.
-- When answering users on the login page, provide general website information only.
+--- FUNDIQ CORE FEATURES ---
+1. Wallet (wallet.html):
+   - Organizes money into 3 core buckets: Savings, Bills, and Spending.
+   - Each bucket has expandable dropdown subcategories (hidden by default until the user clicks the category dropdown arrow).
+   - Displays both Manual Wallet balances and read-only Live Bank balances (connected via Plaid).
+2. AI Deposit Notifications & Money Sorter (sorter.html):
+   - When a deposit is detected, FundIQ generates a **Proposed Allocation** across Bills, Savings, and Spending based on the user's saved allocation percentages and upcoming bills.
+   - FundIQ never transfers real money automatically and never updates actual Wallet balances until the user reviews, optionally edits, and explicitly approves the proposed allocation.
+3. Weekly AI Financial Insights (profile.html & Sunday schedule):
+   - Every Sunday (in the user's selected time zone and delivery time), FundIQ sends a Weekly Financial Summary via Email, SMS, or both.
+   - Summarizes total weekly spending, % change vs. the prior week, spending breakdown, categories where spending increased or decreased, total weekly deposits, connected account balances, and actionable insights.
+4. Payment Calendar & Upcoming Bills (home.html):
+   - Tracks one-time and recurring bills (weekly, biweekly, monthly, yearly), including recurring bills detected from Plaid transaction history (marked as Predicted until confirmed).
 `.trim();
 
 /**
- * Honest, intent-based fallback responses for when the OpenAI API is unreachable,
- * rate-limited (e.g. 429 quota exhaustion), or operating in demo mode.
- * Keeps fallback responses 100% honest without pretending to be a live AI model.
+ * Build context-enriched prompt with matched trusted sources and optional authenticated user summary.
  */
-function getHonestFallbackResponse(userMessage, isGuest = false) {
+function buildTrustedSourcesContext(userMessage, userFinancialContext = null) {
+    const matchedSources = db.searchTrustedFinancialSources(userMessage, 3);
+    const sourceLines = matchedSources.map(
+        (s) => `- ${s.agencyName} (${s.agencyShort}): "${s.title}" — ${s.url}\n  Guidance: ${s.summaryGuidance}`
+    );
+
+    let contextBlock = `VERIFIED TRUSTED FINANCIAL SOURCES FOR THIS QUERY:\n${sourceLines.join("\n")}\n`;
+
+    if (userFinancialContext) {
+        contextBlock += `\nAUTHENTICATED USER FUNDIQ CONTEXT (Only reference if relevant to their question; do not invent policies outside this data):\n${userFinancialContext}\n`;
+    } else {
+        contextBlock += `\nUSER ACCOUNT CONTEXT: No connected bank policy details or private account balances are loaded for this turn. Do not claim access to their bank's specific terms or policies.\n`;
+    }
+
+    return {
+        matchedSources,
+        contextBlock
+    };
+}
+
+/**
+ * Honest, source-backed fallback response when the Anthropic Claude API key is not configured
+ * or when the API is temporarily unreachable. Includes clickable trusted source links and disclaimer.
+ */
+function getHonestFallbackResponse(userMessage, isGuest = false, userFinancialContext = null) {
     const text = (userMessage || "").toLowerCase();
+    const matchedSources = db.searchTrustedFinancialSources(userMessage, 3);
 
-    if (text.includes("sorter") || text.includes("organize") || text.includes("how does") && text.includes("work")) {
-        return "The **Money Sorter** helps you organize any income you receive into three categories: Bills, Spending, and Savings. You input the total money received, your upcoming bills, and your savings goal. FundIQ calculates a suggested split, which you can edit, regenerate, or accept directly into your Wallet!";
+    const formatSourceLinks = (sources) =>
+        sources
+            .map((s) => `- [${s.agencyName} (${s.agencyShort}) — ${s.title}](${s.url})`)
+            .join("\n");
+
+    if (
+        text.includes("unverified") ||
+        text.includes("exact apy") ||
+        text.includes("bank policy") ||
+        text.includes("overdraft fee of my bank")
+    ) {
+        return [
+            "**General Financial Education:**",
+            "I cannot verify your specific bank's internal fee schedule, exact APY, or proprietary account policies because FundIQ only receives read-only balance and transaction summaries from connected institutions—not their legal account agreements. According to the [Consumer Financial Protection Bureau (CFPB)](https://www.consumerfinance.gov/consumer-tools/) and the [FDIC](https://www.fdic.gov/resources/consumers/money-smart/), you should review your bank's official Truth in Savings disclosure or contact your institution directly for exact rate and fee terms.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("category") || text.includes("categories") || text.includes("bills") || text.includes("spending") || text.includes("savings")) {
-        return "FundIQ organizes your money into three simple categories:\n1. **🧾 Bills**: Dedicated money to cover upcoming obligations.\n2. **🛍️ Spending**: Guilt-free money for everyday discretionary purchases.\n3. **💰 Savings**: Funds reserved toward your savings targets.";
+    if (text.includes("fdic") || text.includes("insur") || text.includes("safe") || text.includes("savings account")) {
+        return [
+            "**General Financial Education:**",
+            "According to the [Federal Deposit Insurance Corporation (FDIC)](https://www.fdic.gov/resources/consumers/money-smart/), standard FDIC deposit insurance covers up to **$250,000 per depositor, per insured bank, for each account ownership category** in the event of a bank failure. The [CFPB](https://www.consumerfinance.gov/consumer-tools/) also recommends keeping your emergency fund in an insured depository savings account separate from your everyday checking account.",
+            "",
+            "**Personalized FundIQ Suggestion:**",
+            "In FundIQ, you can map your connected savings account to your **Savings (Rainy Day)** bucket on the Profile page and expand the Savings dropdown on the Wallet page to track goals like your *Emergency fund* separately from *Bills* and *Spending*.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("calendar") || text.includes("upcoming") || text.includes("payment") || text.includes("recurring") || text.includes("due")) {
-        return "The **Payment Calendar & Upcoming Payments** tool on your Home Dashboard lets you schedule one-time or recurring payments (weekly, biweekly, monthly, yearly). When you mark a payment as complete, FundIQ safely deducts the amount from your designated Wallet category (Bills, Spending, or Savings) and prevents accidental overdrafts!";
+    if (text.includes("tax") || text.includes("irs") || text.includes("withholding") || text.includes("1099") || text.includes("refund")) {
+        return [
+            "**General Financial Education:**",
+            "The [Internal Revenue Service (IRS)](https://www.irs.gov/individuals) recommends reviewing your paycheck withholding annually and setting aside funds proactively if you receive freelance, side-gig, or 1099 income so you are prepared for quarterly or annual tax obligations.",
+            "",
+            "**Personalized FundIQ Suggestion:**",
+            "When a new deposit arrives in FundIQ, you can customize your proposed deposit allocation in the **Money Sorter** or **Wallet** to reserve a portion in your **Bills** or **Savings** bucket before approving the split.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("wallet") || text.includes("balance") || text.includes("total")) {
-        if (isGuest) {
-            return "The **Wallet** is where FundIQ tracks your current money divided into Bills, Spending, and Savings. Log in from the prototype login page to view or update your wallet!";
-        }
-        return "The **Wallet** page displays your total money organized into Bills, Spending, and Savings. You can add extra money anytime using the 'Add Money' button or head to the Money Sorter to reorganize your funds.";
+    if (text.includes("invest") || text.includes("sec") || text.includes("stock") || text.includes("retirement") || text.includes("compound")) {
+        return [
+            "**General Financial Education:**",
+            "According to the [U.S. Securities and Exchange Commission (SEC) at Investor.gov](https://www.investor.gov/introduction-investing), building a solid financial foundation starts with paying off high-interest debt and maintaining an emergency savings buffer before taking on market risk. When investing for long-term goals, the SEC emphasizes diversification and checking investment fees.",
+            "",
+            "**Personalized FundIQ Suggestion:**",
+            "You can use FundIQ's **Weekly AI Financial Insights** and **Savings** subcategories to make sure your monthly bills and emergency reserve are consistently funded first.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("login") || text.includes("account") || text.includes("password") || text.includes("sign in")) {
-        return "FundIQ's login is currently a client-side prototype designed for demonstration. No external account database is connected, so your credentials aren't saved to an external server. You can enter your name and email on the login page to try out the dashboard!";
+    if (text.includes("scam") || text.includes("fraud") || text.includes("ftc") || text.includes("identity") || text.includes("credit")) {
+        return [
+            "**General Financial Education:**",
+            "The [Federal Trade Commission (FTC)](https://consumer.ftc.gov/credit-loans-and-debt) and [CFPB](https://www.consumerfinance.gov/consumer-tools/) advise consumers never to share banking passwords or one-time verification codes, to review bank statements regularly for unauthorized charges, and to check credit reports for free at AnnualCreditReport.com.",
+            "",
+            "**Personalized FundIQ Suggestion:**",
+            "FundIQ connects to banks strictly in read-only mode via Plaid and never executes bank transfers or changes your Wallet balances without your explicit review and approval.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("advisor") || text.includes("invest") || text.includes("stock") || text.includes("crypto") || text.includes("tax")) {
-        return "I'm Penny, your FundIQ organization assistant! While I can help you understand how to organize your money into Bills, Spending, and Savings with FundIQ, I cannot provide professional financial, investment, tax, or legal advice.";
+    if (text.includes("sorter") || text.includes("deposit") || text.includes("allocate") || text.includes("split")) {
+        return [
+            "**General Financial Education:**",
+            "Federal financial literacy guidance from [MyMoney.gov](https://www.mymoney.gov/) and the [CFPB](https://www.consumerfinance.gov/consumer-tools/) recommends assigning every paycheck a clear plan—covering essential obligations first, paying yourself into savings, and setting a clear limit for discretionary spending.",
+            "",
+            "**Personalized FundIQ Suggestion:**",
+            "When a deposit is detected in FundIQ, Penny uses your saved allocation percentages (defaulting to 50% Bills, 30% Savings, 20% Spending) to create a **Proposed Allocation**. You can review the proposed vs. actual balances, adjust the dollar amounts for each bucket, and click **Approve Allocation** to update your Wallet.",
+            "",
+            "**Trusted Sources:**",
+            formatSourceLinks(matchedSources),
+            "",
+            `*${INFORMATIONAL_DISCLAIMER}*`
+        ].join("\n");
     }
 
-    if (text.includes("hello") || text.includes("hi") || text.includes("hey")) {
-        return "Hi there! I'm Penny, your FundIQ assistant. I'm here to help you navigate FundIQ and make organizing your money stress-free. How can I help you today?";
-    }
-
-    return "I'm Penny, your FundIQ assistant! I can help explain how to use the Money Sorter, how your Wallet organizes money into Bills, Spending, and Savings, and how to get the most out of FundIQ. What would you like to explore?";
+    return [
+        "**General Financial Education:**",
+        "Trusted federal resources like the [Consumer Financial Protection Bureau (CFPB)](https://www.consumerfinance.gov/consumer-tools/), [FDIC Money Smart](https://www.fdic.gov/resources/consumers/money-smart/), and [MyMoney.gov](https://www.mymoney.gov/) recommend organizing income into three core priorities: essential bills, emergency and goal savings, and planned discretionary spending.",
+        "",
+        "**Personalized FundIQ Suggestion:**",
+        isGuest
+            ? "Log in to your FundIQ account to view your expandable **Wallet** categories, review **Proposed Deposit Allocations**, and receive **Weekly AI Financial Insights** every Sunday!"
+            : "You can expand each category dropdown on your **Wallet** page to inspect your subcategories, review or edit proposed deposit splits in the **Money Sorter**, or configure your Sunday **Weekly AI Financial Summary** on the **Profile** page.",
+        "",
+        "**Trusted Sources:**",
+        formatSourceLinks(matchedSources),
+        "",
+        `*${INFORMATIONAL_DISCLAIMER}*`
+    ].join("\n");
 }
 
 module.exports = {
     ASSISTANT_IDENTITY,
     SUGGESTED_PROMPTS,
+    INFORMATIONAL_DISCLAIMER,
     SYSTEM_PROMPT,
+    buildTrustedSourcesContext,
     getHonestFallbackResponse
 };
-

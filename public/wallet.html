@@ -48,10 +48,10 @@
         </div>
 
         <div class="sidebar-bottom">
-            <div class="sidebar-insight-card">
+            <div class="sidebar-insight-card" style="display:none;">
                 <div class="insight-icon-box" aria-hidden="true">✦</div>
                 <div class="insight-title">Weekly insight</div>
-                <div class="insight-text">You spent 12% less on dining this week.</div>
+                <div class="insight-text"></div>
             </div>
 
             <a href="profile.html" class="sidebar-user-card" title="View Profile &amp; Financial Connections">
@@ -129,16 +129,45 @@
 
         <div id="walletNotice" class="auth-success-msg" style="display:none; margin: 18px 0;" role="status"></div>
 
+        <!-- Pending Proposed Deposit Allocations Review Banner (hidden unless user has pending deposits) -->
+        <section id="walletPendingDepositsPanel" class="conn-panel-card" style="display:none; margin-bottom: 20px; border: 1.5px solid #C4B5FD; background: #FAF5FF;" aria-label="Pending Proposed Deposit Allocations">
+            <div class="conn-panel-header">
+                <div>
+                    <span class="fiq-eyebrow">PROPOSED AI DEPOSIT ALLOCATIONS</span>
+                    <h3>Review &amp; Approve Detected Deposits</h3>
+                    <p>Your actual Wallet balances have <strong>not</strong> changed yet. Review or edit the proposed split below and click <strong>Approve Allocation</strong> to update your Wallet.</p>
+                </div>
+                <a href="sorter.html" class="btn-outline-pill" style="text-decoration:none; font-size:12px;">Open in Money Sorter →</a>
+            </div>
+            <div id="walletPendingDepositsList" style="margin-top: 12px; display:flex; flex-direction:column; gap:12px;"></div>
+        </section>
+
         <!-- Three Bucket Cards Grid (Savings, Bills, Spending matching Figma layout) -->
         <section class="wallet-grid">
 
             <!-- Bucket 1: Savings -->
-            <div class="wallet-card savings">
+            <div class="wallet-card savings" id="walletCard_savings">
                 <div class="bucket-card-header">
                     <div class="bucket-title-group">
                         <div class="bucket-icon-box" aria-hidden="true">✦</div>
                         <div>
-                            <h2>Savings</h2>
+                            <div class="bucket-heading-row">
+                                <h2>Savings</h2>
+                                <button
+                                    type="button"
+                                    id="dropdownBtn_savings"
+                                    class="bucket-dropdown-toggle"
+                                    aria-expanded="false"
+                                    aria-controls="dropdownBody_savings"
+                                    onclick="toggleBucketDropdown('savings')"
+                                    title="Show or hide Savings subcategories"
+                                >
+                                    <span class="dropdown-toggle-text" id="dropdownLabel_savings">Subcategories</span>
+                                    <svg class="bucket-dropdown-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                             <p id="savingsAmount">$0.00</p>
                             <div class="wallet-cat-subtitle">For your future · Rainy Day</div>
                         </div>
@@ -157,18 +186,35 @@
                     </div>
                 </div>
 
-                <div id="subList_savings" class="bucket-sub-list"></div>
-
-                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('savings')">+ Add sub-category</button>
+                <div id="dropdownBody_savings" class="bucket-dropdown-body is-collapsed" style="display: none;">
+                    <div id="subList_savings" class="bucket-sub-list"></div>
+                    <button type="button" class="add-subcat-link" onclick="addBucketSubItem('savings')">+ Add sub-category</button>
+                </div>
             </div>
 
             <!-- Bucket 2: Bills -->
-            <div class="wallet-card bills">
+            <div class="wallet-card bills" id="walletCard_bills">
                 <div class="bucket-card-header">
                     <div class="bucket-title-group">
                         <div class="bucket-icon-box" aria-hidden="true">📅</div>
                         <div>
-                            <h2>Bills</h2>
+                            <div class="bucket-heading-row">
+                                <h2>Bills</h2>
+                                <button
+                                    type="button"
+                                    id="dropdownBtn_bills"
+                                    class="bucket-dropdown-toggle"
+                                    aria-expanded="false"
+                                    aria-controls="dropdownBody_bills"
+                                    onclick="toggleBucketDropdown('bills')"
+                                    title="Show or hide Bills subcategories"
+                                >
+                                    <span class="dropdown-toggle-text" id="dropdownLabel_bills">Subcategories</span>
+                                    <svg class="bucket-dropdown-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                             <p id="billsAmount">$0.00</p>
                             <div class="wallet-cat-subtitle">Ready for essentials · Checking</div>
                         </div>
@@ -187,29 +233,46 @@
                     </div>
                 </div>
 
-                <div id="subList_bills" class="bucket-sub-list"></div>
+                <div id="dropdownBody_bills" class="bucket-dropdown-body is-collapsed" style="display: none;">
+                    <div id="subList_bills" class="bucket-sub-list"></div>
+                    <button type="button" class="add-subcat-link" onclick="addBucketSubItem('bills')">+ Add sub-category</button>
 
-                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('bills')">+ Add sub-category</button>
-
-                <!-- Detected Recurring Bills from Connected Bank Accounts & Payment History -->
-                <div id="billsDetectedRecurringWrap" class="wallet-detected-bills-box" style="display:none; margin-top: 14px; padding-top: 14px; border-top: 1px solid #F3F4F6;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
-                        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6D28D9;">
-                            🔮 Detected Recurring Bills
-                        </span>
-                        <a href="home.html" style="font-size: 11.5px; font-weight: 600; color: #6D28D9; text-decoration: none;">View Calendar ›</a>
+                    <!-- Detected Recurring Bills from Connected Bank Accounts & Payment History -->
+                    <div id="billsDetectedRecurringWrap" class="wallet-detected-bills-box" style="display:none; margin-top: 14px; padding-top: 14px; border-top: 1px solid #F3F4F6;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+                            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6D28D9;">
+                                🔮 Detected Recurring Bills
+                            </span>
+                            <a href="home.html" style="font-size: 11.5px; font-weight: 600; color: #6D28D9; text-decoration: none;">View Calendar ›</a>
+                        </div>
+                        <div id="billsDetectedRecurringList" class="detected-bills-mini-list"></div>
                     </div>
-                    <div id="billsDetectedRecurringList" class="detected-bills-mini-list"></div>
                 </div>
             </div>
 
             <!-- Bucket 3: Spending -->
-            <div class="wallet-card spending">
+            <div class="wallet-card spending" id="walletCard_spending">
                 <div class="bucket-card-header">
                     <div class="bucket-title-group">
                         <div class="bucket-icon-box" aria-hidden="true">💳</div>
                         <div>
-                            <h2>Spending</h2>
+                            <div class="bucket-heading-row">
+                                <h2>Spending</h2>
+                                <button
+                                    type="button"
+                                    id="dropdownBtn_spending"
+                                    class="bucket-dropdown-toggle"
+                                    aria-expanded="false"
+                                    aria-controls="dropdownBody_spending"
+                                    onclick="toggleBucketDropdown('spending')"
+                                    title="Show or hide Spending subcategories"
+                                >
+                                    <span class="dropdown-toggle-text" id="dropdownLabel_spending">Subcategories</span>
+                                    <svg class="bucket-dropdown-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                             <p id="spendingAmount">$0.00</p>
                             <div class="wallet-cat-subtitle">Yours to enjoy · Discretionary</div>
                         </div>
@@ -228,9 +291,10 @@
                     </div>
                 </div>
 
-                <div id="subList_spending" class="bucket-sub-list"></div>
-
-                <button type="button" class="add-subcat-link" onclick="addBucketSubItem('spending')">+ Add sub-category</button>
+                <div id="dropdownBody_spending" class="bucket-dropdown-body is-collapsed" style="display: none;">
+                    <div id="subList_spending" class="bucket-sub-list"></div>
+                    <button type="button" class="add-subcat-link" onclick="addBucketSubItem('spending')">+ Add sub-category</button>
+                </div>
             </div>
 
         </section>

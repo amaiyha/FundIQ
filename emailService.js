@@ -458,12 +458,20 @@ async function dispatchNotification({
         };
     }
 
-    // 2. Check user's Email notification preferences independently
-    if (!prefs.emailEnabled) {
+    // 2. Check user's Email notification preferences and consent independently
+    if (!prefs.emailEnabled || prefs.consentEmail === false) {
         return {
             sent: false,
             skipped: true,
             reason: "EMAIL_NOTIFICATIONS_DISABLED",
+            sms: smsResult
+        };
+    }
+    if (eventType === "weekly_report" && !prefs.weeklyReportEnabled) {
+        return {
+            sent: false,
+            skipped: true,
+            reason: "WEEKLY_REPORT_DISABLED",
             sms: smsResult
         };
     }
@@ -1144,6 +1152,7 @@ async function runDuePaymentReminderSweep(referenceDateInput = new Date()) {
 }
 
 let reminderIntervalHandle = null;
+let weeklySchedulerHandle = null;
 
 function startPaymentReminderScheduler(intervalMs = 15 * 60 * 1000) {
     if (reminderIntervalHandle) return reminderIntervalHandle;
@@ -1155,6 +1164,649 @@ function startPaymentReminderScheduler(intervalMs = 15 * 60 * 1000) {
     return reminderIntervalHandle;
 }
 
+/**
+ * EVENT D: Proposed Deposit Allocation Notification (Email and/or SMS)
+ * Notifies the user when a deposit is detected and presents the AI's proposed split
+ * and proposed vs. actual account balances without transferring real money automatically.
+ */
+async function sendProposedDepositAllocationNotification(user, allocation) {
+    if (!user || !user.id || !allocation) {
+        return { sent: false, skipped: true, reason: "MISSING_DATA" };
+    }
+
+    const displayName = user.full_name || user.fullName || user.username || "FundIQ Member";
+    const depAmtStr = formatMoney(allocation.depositAmount);
+    const billsAmtStr = formatMoney(allocation.proposed.bills);
+    const savingsAmtStr = formatMoney(allocation.proposed.savings);
+    const spendingAmtStr = formatMoney(allocation.proposed.spending);
+
+    const beforeCombined = (allocation.balancesBefore && allocation.balancesBefore.combinedWallet) || {
+        bills: 0,
+        savings: 0,
+        spending: 0,
+        total: 0
+    };
+    const propCombined = (allocation.proposedBalances && allocation.proposedBalances.combinedWallet) || {
+        bills: allocation.proposed.bills,
+        savings: allocation.proposed.savings,
+        spending: allocation.proposed.spending,
+        total: allocation.depositAmount
+    };
+
+    const eventKey = `deposit_allocation:${allocation.depositKey}`;
+    const subject = `[FundIQ] New Deposit Detected (${depAmtStr}) — Proposed AI Money Split Ready for Review`;
+    const leadText = `A deposit of ${depAmtStr} (${allocation.sourceDescription || "Deposit"}) on ${allocation.depositDate} was detected for ${allocation.accountName || "your account"}. Based on your saved FundIQ allocation preferences, Penny prepared a proposed split for your review. No money has been transferred or applied yet—open FundIQ to adjust or approve this allocation.`;
+
+    const detailsRows = [
+        { label: "Deposit Amount", value: depAmtStr },
+        { label: "Deposit Date", value: allocation.depositDate },
+        { label: "Account / Source", value: `${allocation.accountName || "Connected Account"} (${allocation.sourceDescription || "Deposit"})` },
+        { label: "AI Recommended Split — Bills", value: billsAmtStr },
+        { label: "AI Recommended Split — Savings", value: savingsAmtStr },
+        { label: "AI Recommended Split — Spending", value: spendingAmtStr },
+        {
+            label: "Current Actual Balances (Unchanged)",
+            value: `Bills: ${formatMoney(beforeCombined.bills)} | Savings: ${formatMoney(beforeCombined.savings)} | Spending: ${formatMoney(beforeCombined.spending)} (Total: ${formatMoney(beforeCombined.total)})`
+        },
+        {
+            label: "Proposed Balances After Approval",
+            value: `Bills: ${formatMoney(propCombined.bills)} | Savings: ${formatMoney(propCombined.savings)} | Spending: ${formatMoney(propCombined.spending)} (Total: ${formatMoney(propCombined.total)})`
+        },
+        { label: "Status", value: "Proposed — Awaiting Your Review & Approval in FundIQ" }
+    ];
+
+    const text = [
+        `Hello ${displayName},`,
+        ``,
+        leadText,
+        ``,
+        ...detailsRows.map((r) => `- ${r.label}: ${r.value}`),
+        ``,
+        `AI Note: ${allocation.aiExplanation || "Allocated according to your saved FundIQ preferences."}`,
+        ``,
+        `IMPORTANT: FundIQ never transfers real money automatically. Your actual balances remain unchanged until you review, optionally edit, and approve this proposed allocation in FundIQ.`
+    ].join("\n");
+
+    const html = buildFundIQEmailHtml({
+        eyebrow: "AI DEPOSIT NOTIFICATION & PROPOSED SPLIT",
+        title: `${depAmtStr} Deposit Detected — Review Your Proposed Split`,
+        greetingName: displayName,
+        leadText,
+        detailsRows,
+        footerNote:
+            "Important: This is a proposed allocation only. No real bank transfer has been initiated, and your actual FundIQ Wallet balances will only update after you explicitly approve the allocation."
+    });
+
+    const dispatchRes = await dispatchNotification({
+        user,
+        eventKey,
+        eventType: "deposit_made",
+        subject,
+        text,
+        html,
+        metadata: {
+            event: "deposit_proposed_allocation",
+            allocationId: allocation.id,
+            depositKey: allocation.depositKey,
+            depositAmount: allocation.depositAmount,
+            depositDate: allocation.depositDate,
+            proposed: allocation.proposed
+        }
+    });
+
+    if (dispatchRes.sent || (dispatchRes.sms && dispatchRes.sms.sent)) {
+        db.markDepositAllocationNotified(user.id, allocation.id);
+    }
+
+    return dispatchRes;
+}
+
+/**
+ * Helper: Determine user's local day of week and HH:MM in their configured IANA time zone.
+ */
+function getUserZonedTimeParts(dateObj = new Date(), timeZone = "America/Chicago") {
+    let safeTz = timeZone || "America/Chicago";
+    try {
+        Intl.DateTimeFormat("en-US", { timeZone: safeTz });
+    } catch (_) {
+        safeTz = "America/Chicago";
+    }
+
+    const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: safeTz,
+        weekday: "short",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+    });
+
+    const parts = formatter.formatToParts(dateObj);
+    const map = {};
+    for (const p of parts) {
+        map[p.type] = p.value;
+    }
+    const hourNum = Number(map.hour || 0) % 24;
+    const minNum = Number(map.minute || 0);
+    const dateIso = `${map.year}-${map.month}-${map.day}`;
+
+    return {
+        timeZone: safeTz,
+        weekdayShort: map.weekday, // e.g. 'Sun'
+        isSunday: map.weekday === "Sun",
+        dateIso,
+        hour: hourNum,
+        minute: minNum,
+        hhmm: `${String(hourNum).padStart(2, "0")}:${String(minNum).padStart(2, "0")}`
+    };
+}
+
+/**
+ * Compute and persist a user's Weekly AI Financial Summary report.
+ */
+async function generateWeeklyFinancialReport(userId, options = {}) {
+    const uid = Number(userId);
+    const user = db.findUserById(uid);
+    if (!user) {
+        const err = new Error("User not found.");
+        err.status = 404;
+        throw err;
+    }
+
+    const prefs = db.getUserNotificationPrefs(uid);
+    const refDateStr =
+        options.referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(String(options.referenceDate))
+            ? String(options.referenceDate)
+            : formatUtcDate(new Date());
+
+    const refDt = parseLocalDate(refDateStr) || new Date();
+    const weekEndStr = formatUtcDate(refDt);
+
+    const startDt = new Date(refDt.getTime());
+    startDt.setUTCDate(startDt.getUTCDate() - 6);
+    const weekStartStr = formatUtcDate(startDt);
+
+    const prevEndDt = new Date(startDt.getTime());
+    prevEndDt.setUTCDate(prevEndDt.getUTCDate() - 1);
+    const prevWeekEndStr = formatUtcDate(prevEndDt);
+
+    const prevStartDt = new Date(prevEndDt.getTime());
+    prevStartDt.setUTCDate(prevStartDt.getUTCDate() - 6);
+    const prevWeekStartStr = formatUtcDate(prevStartDt);
+
+    // Gather verified Plaid transactions + completed scheduled payments + deposit allocations
+    const allTxs = db.getUserPlaidTransactions(uid, 500);
+    const paymentData = db.getUserPayments(uid);
+    const depositAllocs = db.getDepositAllocationsByUser(uid, 50);
+    const summary = db.getFullWalletSummary(uid);
+    const connectedAccounts = db.getPlaidAccountsByUser(uid);
+
+    const currentWeekOutflows = [];
+    const prevWeekOutflows = [];
+    let totalDeposited = 0;
+
+    for (const tx of allTxs) {
+        if (tx.pending) continue;
+        const amt = Number(tx.amount) || 0;
+        if (amt > 0) {
+            if (tx.date >= weekStartStr && tx.date <= weekEndStr) {
+                currentWeekOutflows.push({
+                    name: tx.merchant_name || tx.name || "Expense",
+                    category: formatTxCategoryLabel(tx.category_primary || "General"),
+                    amount: Math.round(amt * 100) / 100,
+                    date: tx.date
+                });
+            } else if (tx.date >= prevWeekStartStr && tx.date <= prevWeekEndStr) {
+                prevWeekOutflows.push({
+                    name: tx.merchant_name || tx.name || "Expense",
+                    category: formatTxCategoryLabel(tx.category_primary || "General"),
+                    amount: Math.round(amt * 100) / 100,
+                    date: tx.date
+                });
+            }
+        } else if (amt < 0 && tx.date >= weekStartStr && tx.date <= weekEndStr) {
+            // In Plaid, negative amounts on depository accounts represent inflows/deposits
+            totalDeposited += Math.abs(amt);
+        }
+    }
+
+    // Include completed calendar payments during the current/previous week
+    const completions = (paymentData && paymentData.completions) || {};
+    const templates = (paymentData && Array.isArray(paymentData.templates)) ? paymentData.templates : [];
+    for (const [occId, comp] of Object.entries(completions)) {
+        if (!comp || !comp.isCompleted) continue;
+        const compDate = comp.completedAt ? String(comp.completedAt).split("T")[0] : occId.split("_").pop();
+        const amt = Number(comp.deductedAmount) || 0;
+        if (amt <= 0 || !compDate) continue;
+
+        const tpl = templates.find((t) => occId.startsWith(`${t.id}_`));
+        const itemTitle = (tpl && tpl.title) || "Scheduled Payment";
+        const catLabel = formatTxCategoryLabel(comp.deductedCategory || (tpl && tpl.category) || "Bills");
+
+        if (compDate >= weekStartStr && compDate <= weekEndStr) {
+            currentWeekOutflows.push({
+                name: itemTitle,
+                category: catLabel,
+                amount: Math.round(amt * 100) / 100,
+                date: compDate
+            });
+        } else if (compDate >= prevWeekStartStr && compDate <= prevWeekEndStr) {
+            prevWeekOutflows.push({
+                name: itemTitle,
+                category: catLabel,
+                amount: Math.round(amt * 100) / 100,
+                date: compDate
+            });
+        }
+    }
+
+    // Include deposits recorded in deposit_allocations during the current week
+    for (const dep of depositAllocs) {
+        if (dep.depositDate >= weekStartStr && dep.depositDate <= weekEndStr && dep.status !== "rejected") {
+            totalDeposited += Number(dep.depositAmount) || 0;
+        }
+    }
+
+    // Allow optional sample data injection when explicitly requested for testing
+    if (options.includeSampleData && currentWeekOutflows.length === 0 && prevWeekOutflows.length === 0) {
+        currentWeekOutflows.push(
+            { name: "Housing & Utilities", category: "Bills & Utilities", amount: 145.00, date: weekEndStr },
+            { name: "Neighborhood Market", category: "Groceries", amount: 92.40, date: weekEndStr },
+            { name: "Local Cafe & Dining", category: "Dining Out", amount: 44.60, date: weekStartStr }
+        );
+        prevWeekOutflows.push(
+            { name: "Housing & Utilities", category: "Bills & Utilities", amount: 145.00, date: prevWeekEndStr },
+            { name: "Neighborhood Market", category: "Groceries", amount: 105.00, date: prevWeekEndStr },
+            { name: "Local Cafe & Dining", category: "Dining Out", amount: 70.00, date: prevWeekStartStr }
+        );
+        if (totalDeposited === 0) {
+            totalDeposited = 1000.00;
+        }
+    }
+
+    // A new account with no connected bank accounts, no payments, and no deposits should not have insights generated
+    if (
+        !options.includeSampleData &&
+        currentWeekOutflows.length === 0 &&
+        prevWeekOutflows.length === 0 &&
+        totalDeposited === 0 &&
+        connectedAccounts.length === 0
+    ) {
+        return {
+            report: null,
+            notification: null,
+            reason: "NO_ACTIVITY"
+        };
+    }
+
+    const totalSpent = Math.round(currentWeekOutflows.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+    const prevWeekSpent = Math.round(prevWeekOutflows.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+    totalDeposited = Math.round(totalDeposited * 100) / 100;
+
+    let spendingChangePct = 0;
+    if (prevWeekSpent > 0) {
+        spendingChangePct = Math.round(((totalSpent - prevWeekSpent) / prevWeekSpent) * 1000) / 10;
+    } else if (totalSpent > 0) {
+        spendingChangePct = 100;
+    }
+
+    // Group by category for current week and previous week
+    const currCatMap = new Map();
+    const prevCatMap = new Map();
+    for (const item of currentWeekOutflows) {
+        currCatMap.set(item.category, Math.round(((currCatMap.get(item.category) || 0) + item.amount) * 100) / 100);
+    }
+    for (const item of prevWeekOutflows) {
+        prevCatMap.set(item.category, Math.round(((prevCatMap.get(item.category) || 0) + item.amount) * 100) / 100);
+    }
+
+    const spendingBreakdown = Array.from(currCatMap.entries())
+        .map(([category, amount]) => ({
+            category,
+            amount,
+            sharePct: totalSpent > 0 ? Math.round((amount / totalSpent) * 1000) / 10 : 0
+        }))
+        .sort((a, b) => b.amount - a.amount);
+
+    const allCats = new Set([...currCatMap.keys(), ...prevCatMap.keys()]);
+    const categoryComparison = Array.from(allCats).map((category) => {
+        const currentAmount = currCatMap.get(category) || 0;
+        const previousAmount = prevCatMap.get(category) || 0;
+        const diffAmount = Math.round((currentAmount - previousAmount) * 100) / 100;
+        const changePct =
+            previousAmount > 0
+                ? Math.round(((currentAmount - previousAmount) / previousAmount) * 1000) / 10
+                : currentAmount > 0
+                ? 100
+                : 0;
+        return {
+            category,
+            currentAmount,
+            previousAmount,
+            diffAmount,
+            changePct,
+            direction: diffAmount > 0.01 ? "more" : diffAmount < -0.01 ? "less" : "same"
+        };
+    });
+
+    const accountBalancesSnapshot = {
+        combinedWallet: summary.combinedWallet,
+        manualWallet: summary.manualWallet,
+        bankBalances: summary.bankBalances,
+        connectedAccounts: connectedAccounts.map((a) => ({
+            name: a.name,
+            institutionName: a.institution_name || "Connected Bank",
+            mask: a.mask || "••••",
+            subtype: a.subtype || a.type,
+            balance: Math.round((Number(a.available_balance ?? a.current_balance) || 0) * 100) / 100
+        }))
+    };
+
+    // Build deterministic + AI-enhanced insights and actionable suggestions
+    const directionWord =
+        spendingChangePct < 0
+            ? `decreased by ${Math.abs(spendingChangePct)}%`
+            : spendingChangePct > 0
+            ? `increased by ${spendingChangePct}%`
+            : "remained steady (0% change)";
+
+    const spentLessCats = categoryComparison.filter((c) => c.direction === "less");
+    const spentMoreCats = categoryComparison.filter((c) => c.direction === "more");
+
+    let aiInsightsText = `During the week of ${weekStartStr} to ${weekEndStr}, you spent ${formatMoney(totalSpent)}, which ${directionWord} compared to ${formatMoney(prevWeekSpent)} the previous week. Total deposits recorded this week were ${formatMoney(totalDeposited)}, and your combined FundIQ & connected account balance stands at ${formatMoney(summary.combinedWallet.total)}.`;
+
+    const aiSuggestions = [];
+    if (spentLessCats.length > 0) {
+        const topSaved = spentLessCats.sort((a, b) => a.diffAmount - b.diffAmount)[0];
+        aiSuggestions.push(
+            `You spent ${formatMoney(Math.abs(topSaved.diffAmount))} (${Math.abs(topSaved.changePct)}%) less on ${topSaved.category} this week—consider moving those savings into your Rainy Day / Savings bucket.`
+        );
+    }
+    if (spentMoreCats.length > 0) {
+        const topMore = spentMoreCats.sort((a, b) => b.diffAmount - a.diffAmount)[0];
+        aiSuggestions.push(
+            `Spending in ${topMore.category} rose by ${formatMoney(topMore.diffAmount)} compared to last week. Review your ${topMore.category} subcategory limit in the Wallet tab.`
+        );
+    }
+    if (totalDeposited > totalSpent) {
+        const netPositive = Math.round((totalDeposited - totalSpent) * 100) / 100;
+        aiSuggestions.push(
+            `Positive weekly cash flow of ${formatMoney(netPositive)}! According to CFPB and FDIC Money Smart guidance, setting aside ${ prefs.allocationSavingsPct || 30 }% of new inflows strengthens your emergency buffer.`
+        );
+    } else {
+        aiSuggestions.push(
+            `Keep your upcoming bills covered first (${prefs.allocationBillsPct || 50}% target) and check your Payment Calendar for any predicted recurring bills due next week.`
+        );
+    }
+
+    if (typeof options.aiGenerator === "function") {
+        try {
+            const customAi = await options.aiGenerator({
+                weekStart: weekStartStr,
+                weekEnd: weekEndStr,
+                totalSpent,
+                prevWeekSpent,
+                spendingChangePct,
+                totalDeposited,
+                spendingBreakdown,
+                categoryComparison,
+                accountBalances: accountBalancesSnapshot
+            });
+            if (customAi && customAi.insightsText) {
+                aiInsightsText = customAi.insightsText;
+            }
+            if (customAi && Array.isArray(customAi.suggestions) && customAi.suggestions.length > 0) {
+                aiSuggestions.splice(0, aiSuggestions.length, ...customAi.suggestions);
+            }
+        } catch (_) {}
+    }
+
+    const savedReport = db.saveWeeklyFinancialReport(uid, {
+        weekStart: weekStartStr,
+        weekEnd: weekEndStr,
+        totalSpent,
+        prevWeekSpent,
+        spendingChangePct,
+        totalDeposited,
+        spendingBreakdown,
+        categoryComparison,
+        accountBalances: accountBalancesSnapshot,
+        aiInsightsText,
+        aiSuggestions,
+        deliveryMethod: prefs.weeklyDeliveryMethod || "email",
+        deliveryStatus: "generated"
+    });
+
+    if (options.sendNotification) {
+        const notifyRes = await sendWeeklyFinancialReportNotification(user, savedReport, options.deliveryMethod);
+        return {
+            report: db.getWeeklyFinancialReportByWeek(uid, weekStartStr) || savedReport,
+            notification: notifyRes
+        };
+    }
+
+    return {
+        report: savedReport,
+        notification: null
+    };
+}
+
+function formatTxCategoryLabel(rawCat) {
+    const cleaned = String(rawCat || "General")
+        .replace(/_/g, " ")
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    return cleaned || "General";
+}
+
+/**
+ * Send the Weekly AI Financial Summary via the user's selected delivery method (email, sms, or both).
+ */
+async function sendWeeklyFinancialReportNotification(user, report, overrideMethod = null) {
+    if (!user || !user.id || !report) {
+        return { sent: false, skipped: true, reason: "MISSING_REPORT_OR_USER" };
+    }
+
+    const prefs = db.getUserNotificationPrefs(user.id);
+    const method = String(overrideMethod || prefs.weeklyDeliveryMethod || "email").toLowerCase();
+    const displayName = user.full_name || user.fullName || user.username || "FundIQ Member";
+    const eventKey = `weekly_report:${report.weekStart}`;
+
+    const changeStr =
+        report.spendingChangePct < 0
+            ? `Down ${Math.abs(report.spendingChangePct)}% vs. prior week (${formatMoney(report.prevWeekSpent)})`
+            : report.spendingChangePct > 0
+            ? `Up ${report.spendingChangePct}% vs. prior week (${formatMoney(report.prevWeekSpent)})`
+            : `0% change vs. prior week (${formatMoney(report.prevWeekSpent)})`;
+
+    const breakdownStr =
+        Array.isArray(report.spendingBreakdown) && report.spendingBreakdown.length > 0
+            ? report.spendingBreakdown.map((b) => `${b.category}: ${formatMoney(b.amount)} (${b.sharePct}%)`).join(" | ")
+            : "No categorized expenses recorded this week";
+
+    const moreCats = (report.categoryComparison || []).filter((c) => c.direction === "more");
+    const lessCats = (report.categoryComparison || []).filter((c) => c.direction === "less");
+    const comparisonStr = [
+        moreCats.length > 0
+            ? `Spent More: ${moreCats.map((c) => `${c.category} (+${formatMoney(c.diffAmount)})`).join(", ")}`
+            : "Spent More: None",
+        lessCats.length > 0
+            ? `Spent Less: ${lessCats.map((c) => `${c.category} (${formatMoney(c.diffAmount)})`).join(", ")}`
+            : "Spent Less: None"
+    ].join(" • ");
+
+    const comb = (report.accountBalances && report.accountBalances.combinedWallet) || {
+        bills: 0,
+        savings: 0,
+        spending: 0,
+        total: 0
+    };
+
+    const subject = `[FundIQ Weekly AI Summary] ${report.weekStart} to ${report.weekEnd}: ${formatMoney(report.totalSpent)} Spent (${changeStr})`;
+
+    const detailsRows = [
+        { label: "Week Covered", value: `${report.weekStart} to ${report.weekEnd}` },
+        { label: "Total Spent This Week", value: formatMoney(report.totalSpent) },
+        { label: "Comparison vs. Previous Week", value: changeStr },
+        { label: "Spending Breakdown", value: breakdownStr },
+        { label: "Category Changes (More / Less)", value: comparisonStr },
+        { label: "Total Deposited This Week", value: formatMoney(report.totalDeposited) },
+        {
+            label: "Current Account & Wallet Balances",
+            value: `Total: ${formatMoney(comb.total)} (Bills: ${formatMoney(comb.bills)}, Savings: ${formatMoney(comb.savings)}, Spending: ${formatMoney(comb.spending)})`
+        },
+        { label: "AI Financial Insight", value: report.aiInsightsText },
+        {
+            label: "Actionable Suggestions",
+            value: (report.aiSuggestions || []).join(" ")
+        }
+    ];
+
+    const text = [
+        `Hello ${displayName},`,
+        ``,
+        `Here is your Sunday FundIQ Weekly AI Financial Summary (${report.weekStart} – ${report.weekEnd}):`,
+        ``,
+        ...detailsRows.map((r) => `- ${r.label}: ${r.value}`),
+        ``,
+        `Disclaimer: AI financial insights are educational and organizational suggestions, not certified financial advice.`
+    ].join("\n");
+
+    const html = buildFundIQEmailHtml({
+        eyebrow: "SUNDAY WEEKLY AI FINANCIAL SUMMARY",
+        title: `Your Weekly Money Snapshot (${report.weekStart} – ${report.weekEnd})`,
+        greetingName: displayName,
+        leadText: report.aiInsightsText,
+        detailsRows,
+        footerNote:
+            "Delivered automatically per your FundIQ Weekly AI Summary schedule. Educational insights only; not professional financial advice."
+    });
+
+    const smsSummaryText = `[FundIQ Weekly Summary ${report.weekStart}–${report.weekEnd}] Spent: ${formatMoney(report.totalSpent)} (${changeStr}). Deposited: ${formatMoney(report.totalDeposited)}. Balance: ${formatMoney(comb.total)}. Tip: ${(report.aiSuggestions && report.aiSuggestions[0]) || report.aiInsightsText}`;
+
+    let emailRes = { sent: false, skipped: true };
+    let smsRes = { sent: false, skipped: true };
+
+    if (method === "email" || method === "both") {
+        emailRes = await dispatchNotification({
+            user,
+            eventKey,
+            eventType: "weekly_report",
+            subject,
+            text,
+            html,
+            metadata: {
+                event: "weekly_financial_report",
+                weekStart: report.weekStart,
+                weekEnd: report.weekEnd,
+                deliveryMethod: method
+            }
+        });
+    }
+
+    if (method === "sms" || method === "both") {
+        if (prefs.smsEnabled && prefs.consentSms !== false) {
+            smsRes = await dispatchSmsNotification({
+                user,
+                prefs,
+                eventKey: `${eventKey}:sms`,
+                eventType: "weekly_report",
+                subject: smsSummaryText,
+                smsText: smsSummaryText,
+                metadata: {
+                    event: "weekly_financial_report",
+                    weekStart: report.weekStart,
+                    weekEnd: report.weekEnd,
+                    deliveryMethod: method
+                }
+            });
+            db.recordNotificationDeliveryHistory({
+                userId: user.id,
+                eventKey: `${eventKey}:sms`,
+                category: "weekly_report",
+                channel: "sms",
+                recipient: prefs.phoneNumber || "sms_subscriber",
+                subject: `[SMS] Weekly AI Summary (${report.weekStart})`,
+                messagePreview: smsSummaryText,
+                status: smsRes.sent ? "sent" : "skipped",
+                metadata: { weekStart: report.weekStart }
+            });
+        } else {
+            smsRes = { sent: false, skipped: true, reason: "SMS_DISABLED_OR_NO_CONSENT" };
+        }
+    }
+
+    const anySent = Boolean(emailRes.sent || smsRes.sent);
+    if (anySent) {
+        db.saveWeeklyFinancialReport(user.id, {
+            ...report,
+            deliveryMethod: method,
+            deliveryStatus: "sent",
+            sentAt: new Date().toISOString()
+        });
+    }
+
+    return {
+        sent: anySent,
+        deliveryMethod: method,
+        email: emailRes,
+        sms: smsRes
+    };
+}
+
+/**
+ * Automatic Sunday Weekly Report Sweep (Timezone-aware per user)
+ */
+async function checkAndSendDueWeeklyReports(referenceDateObj = new Date()) {
+    const users = db.getAllUsers();
+    const results = [];
+    let sentCount = 0;
+
+    for (const u of users) {
+        try {
+            const prefs = db.getUserNotificationPrefs(u.id);
+            if (!prefs.weeklyReportEnabled) continue;
+
+            const zoned = getUserZonedTimeParts(referenceDateObj, prefs.timezone || "America/Chicago");
+            if (!zoned.isSunday) continue;
+
+            const targetTime = prefs.weeklyDeliveryTime || "09:00";
+            if (zoned.hhmm < targetTime) continue;
+
+            const existingReport = db.getWeeklyFinancialReportByWeek(u.id, zoned.dateIso);
+            if (existingReport && existingReport.deliveryStatus === "sent") {
+                continue;
+            }
+
+            const gen = await generateWeeklyFinancialReport(u.id, {
+                referenceDate: zoned.dateIso,
+                sendNotification: true
+            });
+            if (gen.notification && gen.notification.sent) {
+                sentCount++;
+            }
+            results.push({ userId: u.id, weekEnd: zoned.dateIso, sent: Boolean(gen.notification && gen.notification.sent) });
+        } catch (err) {
+            console.error(`Weekly report scheduler error for user ${u.id}:`, err.message);
+        }
+    }
+
+    return { usersChecked: users.length, sentCount, results };
+}
+
+function startWeeklyInsightsScheduler(intervalMs = 10 * 60 * 1000) {
+    if (weeklySchedulerHandle) return weeklySchedulerHandle;
+    weeklySchedulerHandle = setInterval(() => {
+        checkAndSendDueWeeklyReports(new Date()).catch((err) => {
+            console.error("Weekly insights scheduler error:", err.message);
+        });
+    }, intervalMs);
+    if (weeklySchedulerHandle.unref) weeklySchedulerHandle.unref();
+    return weeklySchedulerHandle;
+}
+
 module.exports = {
     isValidEmail,
     getEmailConfig,
@@ -1164,7 +1816,13 @@ module.exports = {
     dispatchSmsNotification,
     sendPaymentDueNotification,
     sendDepositNotification,
+    sendProposedDepositAllocationNotification,
     sendPaymentActivityNotification,
+    generateWeeklyFinancialReport,
+    sendWeeklyFinancialReportNotification,
+    checkAndSendDueWeeklyReports,
+    startWeeklyInsightsScheduler,
+    getUserZonedTimeParts,
     expandUserOccurrencesInWindow,
     checkUserDuePaymentReminders,
     runDuePaymentReminderSweep,

@@ -2489,3 +2489,54 @@ main.page-container.app-main {
 .email-prefs-card.is-minimized .notif-panel-body {
     display: none;
 }
+
+/* ==========================================================================
+   10. WALLET CATEGORY DROPDOWN MENUS
+   ========================================================================== */
+.bucket-heading-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bucket-dropdown-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid #E5E7EB;
+    background: #F9FAFB;
+    color: #5B21B6;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    margin: 0;
+}
+
+.bucket-dropdown-toggle:hover {
+    background: #F3E8FF;
+    border-color: #C4B5FD;
+    color: #4C1D95;
+}
+
+.bucket-dropdown-arrow {
+    transition: transform 0.2s ease;
+}
+
+.bucket-dropdown-toggle[aria-expanded="true"] .bucket-dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.bucket-dropdown-body.is-collapsed {
+    display: none;
+}
+
+.bucket-dropdown-body.is-expanded {
+    display: block;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #F3F4F6;
+}

@@ -180,6 +180,97 @@ CREATE TABLE IF NOT EXISTS detected_bills (
     UNIQUE(user_id, bill_key),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS weekly_financial_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    week_start TEXT NOT NULL,
+    week_end TEXT NOT NULL,
+    total_spent REAL NOT NULL DEFAULT 0,
+    prev_week_spent REAL NOT NULL DEFAULT 0,
+    spending_change_pct REAL NOT NULL DEFAULT 0,
+    total_deposited REAL NOT NULL DEFAULT 0,
+    spending_breakdown_json TEXT NOT NULL DEFAULT '[]',
+    category_comparison_json TEXT NOT NULL DEFAULT '[]',
+    account_balances_json TEXT NOT NULL DEFAULT '{}',
+    ai_insights_text TEXT NOT NULL DEFAULT '',
+    ai_suggestions_json TEXT NOT NULL DEFAULT '[]',
+    delivery_method TEXT NOT NULL DEFAULT 'email',
+    delivery_status TEXT NOT NULL DEFAULT 'generated',
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    UNIQUE(user_id, week_start),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS deposit_allocations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    deposit_key TEXT NOT NULL,
+    account_id TEXT,
+    account_name TEXT NOT NULL DEFAULT 'Connected Bank Account',
+    deposit_amount REAL NOT NULL,
+    deposit_date TEXT NOT NULL,
+    source_description TEXT NOT NULL DEFAULT 'Direct Deposit',
+    recommended_bills REAL NOT NULL DEFAULT 0,
+    recommended_savings REAL NOT NULL DEFAULT 0,
+    recommended_spending REAL NOT NULL DEFAULT 0,
+    proposed_bills REAL NOT NULL DEFAULT 0,
+    proposed_savings REAL NOT NULL DEFAULT 0,
+    proposed_spending REAL NOT NULL DEFAULT 0,
+    approved_bills REAL,
+    approved_savings REAL,
+    approved_spending REAL,
+    balances_before_json TEXT NOT NULL DEFAULT '{}',
+    proposed_balances_json TEXT NOT NULL DEFAULT '{}',
+    actual_balances_after_json TEXT,
+    ai_explanation TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'proposed',
+    notification_sent INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    approved_at TEXT,
+    UNIQUE(user_id, deposit_key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ai_financial_insights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    insight_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary_text TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS notification_delivery_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    event_key TEXT NOT NULL,
+    category TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message_preview TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS trusted_financial_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_key TEXT NOT NULL UNIQUE,
+    agency_name TEXT NOT NULL,
+    agency_short TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    topics_csv TEXT NOT NULL,
+    summary_guidance TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 `);
 
 // Safe non-destructive column migrations for existing databases
@@ -202,6 +293,33 @@ CREATE TABLE IF NOT EXISTS detected_bills (
         }
         if (!notifCols.has("sms_payment_submitted_enabled")) {
             db.exec("ALTER TABLE user_notification_prefs ADD COLUMN sms_payment_submitted_enabled INTEGER NOT NULL DEFAULT 1;");
+        }
+        if (!notifCols.has("weekly_report_enabled")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN weekly_report_enabled INTEGER NOT NULL DEFAULT 1;");
+        }
+        if (!notifCols.has("weekly_delivery_method")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN weekly_delivery_method TEXT NOT NULL DEFAULT 'email';");
+        }
+        if (!notifCols.has("weekly_delivery_time")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN weekly_delivery_time TEXT NOT NULL DEFAULT '09:00';");
+        }
+        if (!notifCols.has("timezone")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN timezone TEXT NOT NULL DEFAULT 'America/Chicago';");
+        }
+        if (!notifCols.has("allocation_bills_pct")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN allocation_bills_pct REAL NOT NULL DEFAULT 50;");
+        }
+        if (!notifCols.has("allocation_savings_pct")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN allocation_savings_pct REAL NOT NULL DEFAULT 30;");
+        }
+        if (!notifCols.has("allocation_spending_pct")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN allocation_spending_pct REAL NOT NULL DEFAULT 20;");
+        }
+        if (!notifCols.has("consent_email")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN consent_email INTEGER NOT NULL DEFAULT 1;");
+        }
+        if (!notifCols.has("consent_sms")) {
+            db.exec("ALTER TABLE user_notification_prefs ADD COLUMN consent_sms INTEGER NOT NULL DEFAULT 0;");
         }
 
         const itemCols = new Set(
@@ -348,7 +466,10 @@ const stmts = {
     getNotificationPrefs: db.prepare(`
         SELECT user_id, email_enabled, payment_due_enabled, deposit_enabled, payment_submitted_enabled,
                reminder_days_before, sms_enabled, phone_number, sms_payment_due_enabled,
-               sms_deposit_enabled, sms_payment_submitted_enabled, updated_at
+               sms_deposit_enabled, sms_payment_submitted_enabled,
+               weekly_report_enabled, weekly_delivery_method, weekly_delivery_time, timezone,
+               allocation_bills_pct, allocation_savings_pct, allocation_spending_pct,
+               consent_email, consent_sms, updated_at
         FROM user_notification_prefs
         WHERE user_id = ?
         LIMIT 1
@@ -358,9 +479,12 @@ const stmts = {
             user_id, email_enabled, payment_due_enabled, deposit_enabled,
             payment_submitted_enabled, reminder_days_before,
             sms_enabled, phone_number, sms_payment_due_enabled,
-            sms_deposit_enabled, sms_payment_submitted_enabled, updated_at
+            sms_deposit_enabled, sms_payment_submitted_enabled,
+            weekly_report_enabled, weekly_delivery_method, weekly_delivery_time, timezone,
+            allocation_bills_pct, allocation_savings_pct, allocation_spending_pct,
+            consent_email, consent_sms, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             email_enabled = excluded.email_enabled,
             payment_due_enabled = excluded.payment_due_enabled,
@@ -372,6 +496,15 @@ const stmts = {
             sms_payment_due_enabled = excluded.sms_payment_due_enabled,
             sms_deposit_enabled = excluded.sms_deposit_enabled,
             sms_payment_submitted_enabled = excluded.sms_payment_submitted_enabled,
+            weekly_report_enabled = excluded.weekly_report_enabled,
+            weekly_delivery_method = excluded.weekly_delivery_method,
+            weekly_delivery_time = excluded.weekly_delivery_time,
+            timezone = excluded.timezone,
+            allocation_bills_pct = excluded.allocation_bills_pct,
+            allocation_savings_pct = excluded.allocation_savings_pct,
+            allocation_spending_pct = excluded.allocation_spending_pct,
+            consent_email = excluded.consent_email,
+            consent_sms = excluded.consent_sms,
             updated_at = excluded.updated_at
     `),
     getSubcategoriesByUser: db.prepare(`
@@ -628,11 +761,20 @@ function clearUserWallet(userId) {
     return { bills: 0, spending: 0, savings: 0 };
 }
 
+const LEGACY_DEMO_TEMPLATE_IDS = new Set(["tpl_rent", "tpl_phone", "tpl_groceries"]);
+
 function getUserPayments(userId) {
     const row = stmts.getPayments.get(Number(userId));
     if (row && row.data_json) {
         try {
-            return JSON.parse(row.data_json);
+            const parsed = JSON.parse(row.data_json);
+            const rawTemplates = Array.isArray(parsed.templates) ? parsed.templates : [];
+            const cleanTemplates = rawTemplates.filter((t) => t && !LEGACY_DEMO_TEMPLATE_IDS.has(String(t.id)));
+            return {
+                templates: cleanTemplates,
+                completions: parsed.completions && typeof parsed.completions === "object" ? parsed.completions : {},
+                overrides: parsed.overrides && typeof parsed.overrides === "object" ? parsed.overrides : {}
+            };
         } catch (e) {
             console.error("FundIQ: Error parsing payment json:", e);
         }
@@ -2072,6 +2214,19 @@ function getUserNotificationPrefs(userId) {
         const smsPaymentDueEnabled = row.sms_payment_due_enabled !== undefined ? Boolean(row.sms_payment_due_enabled) : true;
         const smsDepositEnabled = row.sms_deposit_enabled !== undefined ? Boolean(row.sms_deposit_enabled) : true;
         const smsPaymentSubmittedEnabled = row.sms_payment_submitted_enabled !== undefined ? Boolean(row.sms_payment_submitted_enabled) : true;
+        const weeklyReportEnabled = row.weekly_report_enabled !== undefined ? Boolean(row.weekly_report_enabled) : true;
+        const weeklyDeliveryMethod = ["email", "sms", "both"].includes(String(row.weekly_delivery_method || "").toLowerCase())
+            ? String(row.weekly_delivery_method).toLowerCase()
+            : "email";
+        const weeklyDeliveryTime = /^\d{2}:\d{2}$/.test(String(row.weekly_delivery_time || ""))
+            ? String(row.weekly_delivery_time)
+            : "09:00";
+        const timezone = row.timezone ? String(row.timezone).trim() : "America/Chicago";
+        const allocationBillsPct = Number.isFinite(Number(row.allocation_bills_pct)) ? Number(row.allocation_bills_pct) : 50;
+        const allocationSavingsPct = Number.isFinite(Number(row.allocation_savings_pct)) ? Number(row.allocation_savings_pct) : 30;
+        const allocationSpendingPct = Number.isFinite(Number(row.allocation_spending_pct)) ? Number(row.allocation_spending_pct) : 20;
+        const consentEmail = row.consent_email !== undefined ? Boolean(row.consent_email) : true;
+        const consentSms = row.consent_sms !== undefined ? Boolean(row.consent_sms) : Boolean(row.sms_enabled);
 
         return {
             userId: uid,
@@ -2088,6 +2243,15 @@ function getUserNotificationPrefs(userId) {
             smsPaymentDueEnabled,
             smsDepositEnabled,
             smsPaymentSubmittedEnabled,
+            weeklyReportEnabled,
+            weeklyDeliveryMethod,
+            weeklyDeliveryTime,
+            timezone,
+            allocationBillsPct,
+            allocationSavingsPct,
+            allocationSpendingPct,
+            consentEmail,
+            consentSms,
             updatedAt: row.updated_at
         };
     }
@@ -2106,6 +2270,15 @@ function getUserNotificationPrefs(userId) {
         smsPaymentDueEnabled: true,
         smsDepositEnabled: true,
         smsPaymentSubmittedEnabled: true,
+        weeklyReportEnabled: true,
+        weeklyDeliveryMethod: "email",
+        weeklyDeliveryTime: "09:00",
+        timezone: "America/Chicago",
+        allocationBillsPct: 50,
+        allocationSavingsPct: 30,
+        allocationSpendingPct: 20,
+        consentEmail: true,
+        consentSms: false,
         updatedAt: null
     };
 }
@@ -2141,6 +2314,24 @@ function setUserNotificationPrefs(userId, prefs = {}) {
             ? Boolean(prefs.smsPaymentSubmittedEnabled)
             : current.smsPaymentSubmittedEnabled;
 
+    const weeklyReportEnabled =
+        prefs.weeklyReportEnabled !== undefined ? Boolean(prefs.weeklyReportEnabled) : current.weeklyReportEnabled;
+    const rawMethod = String(prefs.weeklyDeliveryMethod || current.weeklyDeliveryMethod || "email").toLowerCase();
+    const weeklyDeliveryMethod = ["email", "sms", "both"].includes(rawMethod) ? rawMethod : "email";
+    const rawTime = String(prefs.weeklyDeliveryTime || current.weeklyDeliveryTime || "09:00").trim();
+    const weeklyDeliveryTime = /^\d{2}:\d{2}$/.test(rawTime) ? rawTime : "09:00";
+    const timezone = prefs.timezone ? String(prefs.timezone).trim() : current.timezone;
+
+    let allocationBillsPct = prefs.allocationBillsPct !== undefined ? Number(prefs.allocationBillsPct) : current.allocationBillsPct;
+    let allocationSavingsPct = prefs.allocationSavingsPct !== undefined ? Number(prefs.allocationSavingsPct) : current.allocationSavingsPct;
+    let allocationSpendingPct = prefs.allocationSpendingPct !== undefined ? Number(prefs.allocationSpendingPct) : current.allocationSpendingPct;
+    if (isNaN(allocationBillsPct) || allocationBillsPct < 0) allocationBillsPct = 50;
+    if (isNaN(allocationSavingsPct) || allocationSavingsPct < 0) allocationSavingsPct = 30;
+    if (isNaN(allocationSpendingPct) || allocationSpendingPct < 0) allocationSpendingPct = Math.max(0, 100 - allocationBillsPct - allocationSavingsPct);
+
+    const consentEmail = prefs.consentEmail !== undefined ? Boolean(prefs.consentEmail) : (emailEnabled ? true : current.consentEmail);
+    const consentSms = prefs.consentSms !== undefined ? Boolean(prefs.consentSms) : (smsEnabled ? true : current.consentSms);
+
     stmts.upsertNotificationPrefs.run(
         uid,
         emailEnabled ? 1 : 0,
@@ -2153,6 +2344,15 @@ function setUserNotificationPrefs(userId, prefs = {}) {
         smsPaymentDueEnabled ? 1 : 0,
         smsDepositEnabled ? 1 : 0,
         smsPaymentSubmittedEnabled ? 1 : 0,
+        weeklyReportEnabled ? 1 : 0,
+        weeklyDeliveryMethod,
+        weeklyDeliveryTime,
+        timezone,
+        allocationBillsPct,
+        allocationSavingsPct,
+        allocationSpendingPct,
+        consentEmail ? 1 : 0,
+        consentSms ? 1 : 0,
         now
     );
 
@@ -2216,6 +2416,19 @@ function recordEmailNotification({
         sentAt
     );
 
+    // Also record in unified notification_delivery_history
+    recordNotificationDeliveryHistory({
+        userId: uid,
+        eventKey: key,
+        category: String(eventType),
+        channel: "email",
+        recipient: String(recipientEmail),
+        subject: String(subject),
+        messagePreview: bodyText ? String(bodyText).slice(0, 280) : String(subject),
+        status: String(status),
+        metadata
+    });
+
     return findEmailNotificationByEventKey(uid, key);
 }
 
@@ -2248,6 +2461,714 @@ function getUserEmailNotifications(userId, limit = 25) {
 
 function getAllUsers() {
     return stmts.getAllUsers.all() || [];
+}
+
+// -----------------------------
+// UNIFIED NOTIFICATION DELIVERY HISTORY
+// -----------------------------
+
+const insertDeliveryHistoryStmt = db.prepare(`
+    INSERT INTO notification_delivery_history (
+        user_id, event_key, category, channel, recipient, subject, message_preview, status, metadata_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const getDeliveryHistoryByUserStmt = db.prepare(`
+    SELECT * FROM notification_delivery_history
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT ?
+`);
+
+function recordNotificationDeliveryHistory({
+    userId,
+    eventKey,
+    category,
+    channel,
+    recipient,
+    subject,
+    messagePreview = "",
+    status = "sent",
+    metadata = null
+}) {
+    if (!userId) return null;
+    const now = new Date().toISOString();
+    insertDeliveryHistoryStmt.run(
+        Number(userId),
+        String(eventKey || `evt_${Date.now()}`),
+        String(category || "general"),
+        String(channel || "email"),
+        String(recipient || ""),
+        String(subject || "FundIQ Notification"),
+        String(messagePreview || "").slice(0, 400),
+        String(status || "sent"),
+        metadata ? JSON.stringify(metadata) : null,
+        now
+    );
+}
+
+function getNotificationDeliveryHistoryByUser(userId, limit = 50) {
+    if (!userId) return [];
+    const rows = getDeliveryHistoryByUserStmt.all(Number(userId), Math.max(1, Math.min(200, Number(limit) || 50))) || [];
+    return rows.map((r) => {
+        let metadata = null;
+        if (r.metadata_json) {
+            try { metadata = JSON.parse(r.metadata_json); } catch (_) {}
+        }
+        return {
+            id: r.id,
+            userId: r.user_id,
+            eventKey: r.event_key,
+            category: r.category,
+            channel: r.channel,
+            recipient: r.recipient,
+            subject: r.subject,
+            messagePreview: r.message_preview,
+            status: r.status,
+            metadata,
+            createdAt: r.created_at
+        };
+    });
+}
+
+// -----------------------------
+// WEEKLY AI FINANCIAL REPORTS & INSIGHTS
+// -----------------------------
+
+const upsertWeeklyReportStmt = db.prepare(`
+    INSERT INTO weekly_financial_reports (
+        user_id, week_start, week_end, total_spent, prev_week_spent, spending_change_pct,
+        total_deposited, spending_breakdown_json, category_comparison_json, account_balances_json,
+        ai_insights_text, ai_suggestions_json, delivery_method, delivery_status, created_at, sent_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, week_start) DO UPDATE SET
+        week_end = excluded.week_end,
+        total_spent = excluded.total_spent,
+        prev_week_spent = excluded.prev_week_spent,
+        spending_change_pct = excluded.spending_change_pct,
+        total_deposited = excluded.total_deposited,
+        spending_breakdown_json = excluded.spending_breakdown_json,
+        category_comparison_json = excluded.category_comparison_json,
+        account_balances_json = excluded.account_balances_json,
+        ai_insights_text = excluded.ai_insights_text,
+        ai_suggestions_json = excluded.ai_suggestions_json,
+        delivery_method = excluded.delivery_method,
+        delivery_status = excluded.delivery_status,
+        sent_at = COALESCE(excluded.sent_at, weekly_financial_reports.sent_at)
+`);
+
+const getWeeklyReportByWeekStmt = db.prepare(`
+    SELECT * FROM weekly_financial_reports
+    WHERE user_id = ? AND week_start = ?
+    LIMIT 1
+`);
+
+const getWeeklyReportsByUserStmt = db.prepare(`
+    SELECT * FROM weekly_financial_reports
+    WHERE user_id = ?
+    ORDER BY week_start DESC, id DESC
+    LIMIT ?
+`);
+
+const insertAiInsightStmt = db.prepare(`
+    INSERT INTO ai_financial_insights (user_id, insight_type, title, summary_text, details_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const getAiInsightsByUserStmt = db.prepare(`
+    SELECT * FROM ai_financial_insights
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT ?
+`);
+
+function formatWeeklyReportRow(row) {
+    if (!row) return null;
+    const safeParse = (str, fallback) => {
+        if (!str) return fallback;
+        try { return JSON.parse(str); } catch (_) { return fallback; }
+    };
+    return {
+        id: row.id,
+        userId: row.user_id,
+        weekStart: row.week_start,
+        weekEnd: row.week_end,
+        totalSpent: Math.round((Number(row.total_spent) || 0) * 100) / 100,
+        prevWeekSpent: Math.round((Number(row.prev_week_spent) || 0) * 100) / 100,
+        spendingChangePct: Math.round((Number(row.spending_change_pct) || 0) * 10) / 10,
+        totalDeposited: Math.round((Number(row.total_deposited) || 0) * 100) / 100,
+        spendingBreakdown: safeParse(row.spending_breakdown_json, []),
+        categoryComparison: safeParse(row.category_comparison_json, []),
+        accountBalances: safeParse(row.account_balances_json, {}),
+        aiInsightsText: row.ai_insights_text || "",
+        aiSuggestions: safeParse(row.ai_suggestions_json, []),
+        deliveryMethod: row.delivery_method || "email",
+        deliveryStatus: row.delivery_status || "generated",
+        createdAt: row.created_at,
+        sentAt: row.sent_at
+    };
+}
+
+function saveWeeklyFinancialReport(userId, reportData = {}) {
+    const uid = Number(userId);
+    const now = new Date().toISOString();
+    const weekStart = String(reportData.weekStart || now.split("T")[0]);
+    const weekEnd = String(reportData.weekEnd || now.split("T")[0]);
+
+    upsertWeeklyReportStmt.run(
+        uid,
+        weekStart,
+        weekEnd,
+        Math.round((Number(reportData.totalSpent) || 0) * 100) / 100,
+        Math.round((Number(reportData.prevWeekSpent) || 0) * 100) / 100,
+        Math.round((Number(reportData.spendingChangePct) || 0) * 10) / 10,
+        Math.round((Number(reportData.totalDeposited) || 0) * 100) / 100,
+        JSON.stringify(Array.isArray(reportData.spendingBreakdown) ? reportData.spendingBreakdown : []),
+        JSON.stringify(Array.isArray(reportData.categoryComparison) ? reportData.categoryComparison : []),
+        JSON.stringify(reportData.accountBalances || {}),
+        String(reportData.aiInsightsText || ""),
+        JSON.stringify(Array.isArray(reportData.aiSuggestions) ? reportData.aiSuggestions : []),
+        String(reportData.deliveryMethod || "email"),
+        String(reportData.deliveryStatus || "generated"),
+        now,
+        reportData.sentAt || null
+    );
+
+    if (reportData.aiInsightsText) {
+        insertAiInsightStmt.run(
+            uid,
+            "weekly_summary",
+            `Weekly Financial Summary (${weekStart} to ${weekEnd})`,
+            String(reportData.aiInsightsText),
+            JSON.stringify({
+                weekStart,
+                weekEnd,
+                totalSpent: reportData.totalSpent,
+                spendingChangePct: reportData.spendingChangePct,
+                suggestions: reportData.aiSuggestions || []
+            }),
+            now
+        );
+    }
+
+    return formatWeeklyReportRow(getWeeklyReportByWeekStmt.get(uid, weekStart));
+}
+
+function getWeeklyFinancialReportByWeek(userId, weekStart) {
+    if (!userId || !weekStart) return null;
+    return formatWeeklyReportRow(getWeeklyReportByWeekStmt.get(Number(userId), String(weekStart)));
+}
+
+function getWeeklyFinancialReportsByUser(userId, limit = 12) {
+    if (!userId) return [];
+    const rows = getWeeklyReportsByUserStmt.all(Number(userId), Math.max(1, Math.min(52, Number(limit) || 12))) || [];
+    return rows.map(formatWeeklyReportRow);
+}
+
+function getAiFinancialInsightsByUser(userId, limit = 20) {
+    if (!userId) return [];
+    const rows = getAiInsightsByUserStmt.all(Number(userId), Math.max(1, Math.min(100, Number(limit) || 20))) || [];
+    return rows.map((r) => {
+        let details = {};
+        if (r.details_json) {
+            try { details = JSON.parse(r.details_json); } catch (_) {}
+        }
+        return {
+            id: r.id,
+            userId: r.user_id,
+            insightType: r.insight_type,
+            title: r.title,
+            summaryText: r.summary_text,
+            details,
+            createdAt: r.created_at
+        };
+    });
+}
+
+// -----------------------------
+// DEPOSIT NOTIFICATIONS & PROPOSED / APPROVED ALLOCATIONS
+// -----------------------------
+
+const upsertDepositAllocationStmt = db.prepare(`
+    INSERT INTO deposit_allocations (
+        user_id, deposit_key, account_id, account_name, deposit_amount, deposit_date,
+        source_description, recommended_bills, recommended_savings, recommended_spending,
+        proposed_bills, proposed_savings, proposed_spending,
+        approved_bills, approved_savings, approved_spending,
+        balances_before_json, proposed_balances_json, actual_balances_after_json,
+        ai_explanation, status, notification_sent, created_at, updated_at, approved_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, deposit_key) DO UPDATE SET
+        updated_at = excluded.updated_at
+`);
+
+const getDepositAllocationsByUserStmt = db.prepare(`
+    SELECT * FROM deposit_allocations
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT ?
+`);
+
+const getDepositAllocationByIdStmt = db.prepare(`
+    SELECT * FROM deposit_allocations
+    WHERE user_id = ? AND id = ?
+    LIMIT 1
+`);
+
+const getDepositAllocationByKeyStmt = db.prepare(`
+    SELECT * FROM deposit_allocations
+    WHERE user_id = ? AND deposit_key = ?
+    LIMIT 1
+`);
+
+const updateProposedAllocationStmt = db.prepare(`
+    UPDATE deposit_allocations
+    SET proposed_bills = ?, proposed_savings = ?, proposed_spending = ?,
+        proposed_balances_json = ?, updated_at = ?
+    WHERE user_id = ? AND id = ?
+`);
+
+const approveDepositAllocationStmt = db.prepare(`
+    UPDATE deposit_allocations
+    SET proposed_bills = ?, proposed_savings = ?, proposed_spending = ?,
+        approved_bills = ?, approved_savings = ?, approved_spending = ?,
+        actual_balances_after_json = ?, status = 'approved',
+        updated_at = ?, approved_at = ?
+    WHERE user_id = ? AND id = ?
+`);
+
+const rejectDepositAllocationStmt = db.prepare(`
+    UPDATE deposit_allocations
+    SET status = 'rejected', updated_at = ?
+    WHERE user_id = ? AND id = ?
+`);
+
+const markDepositAllocationNotifiedStmt = db.prepare(`
+    UPDATE deposit_allocations
+    SET notification_sent = 1, updated_at = ?
+    WHERE user_id = ? AND id = ?
+`);
+
+function formatDepositAllocationRow(row) {
+    if (!row) return null;
+    const safeParse = (str, fallback) => {
+        if (!str) return fallback;
+        try { return JSON.parse(str); } catch (_) { return fallback; }
+    };
+    return {
+        id: row.id,
+        userId: row.user_id,
+        depositKey: row.deposit_key,
+        accountId: row.account_id || null,
+        accountName: row.account_name || "Connected Bank Account",
+        depositAmount: Math.round((Number(row.deposit_amount) || 0) * 100) / 100,
+        depositDate: row.deposit_date,
+        sourceDescription: row.source_description || "Deposit",
+        recommended: {
+            bills: Math.round((Number(row.recommended_bills) || 0) * 100) / 100,
+            savings: Math.round((Number(row.recommended_savings) || 0) * 100) / 100,
+            spending: Math.round((Number(row.recommended_spending) || 0) * 100) / 100
+        },
+        proposed: {
+            bills: Math.round((Number(row.proposed_bills) || 0) * 100) / 100,
+            savings: Math.round((Number(row.proposed_savings) || 0) * 100) / 100,
+            spending: Math.round((Number(row.proposed_spending) || 0) * 100) / 100
+        },
+        approved: row.status === "approved" ? {
+            bills: Math.round((Number(row.approved_bills) || 0) * 100) / 100,
+            savings: Math.round((Number(row.approved_savings) || 0) * 100) / 100,
+            spending: Math.round((Number(row.approved_spending) || 0) * 100) / 100
+        } : null,
+        balancesBefore: safeParse(row.balances_before_json, {}),
+        proposedBalances: safeParse(row.proposed_balances_json, {}),
+        actualBalancesAfter: safeParse(row.actual_balances_after_json, null),
+        aiExplanation: row.ai_explanation || "",
+        status: row.status || "proposed",
+        notificationSent: Boolean(row.notification_sent),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        approvedAt: row.approved_at || null
+    };
+}
+
+function createDepositAllocation(userId, payload = {}) {
+    const uid = Number(userId);
+    const depositAmount = Math.round((Number(payload.depositAmount) || 0) * 100) / 100;
+    if (depositAmount <= 0) {
+        const err = new Error("Deposit amount must be greater than $0.00.");
+        err.status = 400;
+        throw err;
+    }
+
+    const depositDate = String(payload.depositDate || new Date().toISOString().split("T")[0]);
+    const depositKey = String(payload.depositKey || `dep_${uid}_${Date.now()}_${Math.round(depositAmount * 100)}`);
+    const existing = getDepositAllocationByKeyStmt.get(uid, depositKey);
+    if (existing) {
+        return formatDepositAllocationRow(existing);
+    }
+
+    const recBills = Math.round((Number(payload.recommendedBills ?? payload.proposedBills) || 0) * 100) / 100;
+    const recSavings = Math.round((Number(payload.recommendedSavings ?? payload.proposedSavings) || 0) * 100) / 100;
+    const recSpending = Math.round((depositAmount - recBills - recSavings) * 100) / 100;
+
+    const summary = getFullWalletSummary(uid);
+    const actualBefore = {
+        manualWallet: summary.manualWallet,
+        bankBalances: summary.bankBalances,
+        combinedWallet: summary.combinedWallet
+    };
+
+    const proposedAfter = {
+        manualWallet: {
+            bills: Math.round((summary.manualWallet.bills + recBills) * 100) / 100,
+            savings: Math.round((summary.manualWallet.savings + recSavings) * 100) / 100,
+            spending: Math.round((summary.manualWallet.spending + recSpending) * 100) / 100
+        },
+        bankBalances: summary.bankBalances,
+        combinedWallet: {
+            bills: Math.round((summary.combinedWallet.bills + recBills) * 100) / 100,
+            savings: Math.round((summary.combinedWallet.savings + recSavings) * 100) / 100,
+            spending: Math.round((summary.combinedWallet.spending + recSpending) * 100) / 100,
+            total: Math.round((summary.combinedWallet.total + depositAmount) * 100) / 100
+        }
+    };
+
+    const now = new Date().toISOString();
+    upsertDepositAllocationStmt.run(
+        uid,
+        depositKey,
+        payload.accountId ? String(payload.accountId) : null,
+        String(payload.accountName || "Connected Checking Account"),
+        depositAmount,
+        depositDate,
+        String(payload.sourceDescription || "Direct Deposit"),
+        recBills,
+        recSavings,
+        recSpending,
+        recBills,
+        recSavings,
+        recSpending,
+        null,
+        null,
+        null,
+        JSON.stringify(actualBefore),
+        JSON.stringify(proposedAfter),
+        null,
+        String(payload.aiExplanation || ""),
+        "proposed",
+        payload.notificationSent ? 1 : 0,
+        now,
+        now,
+        null
+    );
+
+    return formatDepositAllocationRow(getDepositAllocationByKeyStmt.get(uid, depositKey));
+}
+
+function getDepositAllocationsByUser(userId, limit = 30) {
+    if (!userId) return [];
+    const rows = getDepositAllocationsByUserStmt.all(Number(userId), Math.max(1, Math.min(100, Number(limit) || 30))) || [];
+    return rows.map(formatDepositAllocationRow);
+}
+
+function getDepositAllocationById(userId, id) {
+    if (!userId || !id) return null;
+    return formatDepositAllocationRow(getDepositAllocationByIdStmt.get(Number(userId), Number(id)));
+}
+
+function markDepositAllocationNotified(userId, id) {
+    if (!userId || !id) return;
+    markDepositAllocationNotifiedStmt.run(new Date().toISOString(), Number(userId), Number(id));
+}
+
+function updateProposedDepositAllocation(userId, id, updates = {}) {
+    const uid = Number(userId);
+    const allocId = Number(id);
+    const existingRow = getDepositAllocationByIdStmt.get(uid, allocId);
+    if (!existingRow) {
+        const err = new Error("Proposed deposit allocation not found.");
+        err.status = 404;
+        throw err;
+    }
+    if (existingRow.status !== "proposed") {
+        const err = new Error(`Cannot modify an allocation that is already ${existingRow.status}.`);
+        err.status = 400;
+        throw err;
+    }
+
+    const totalDeposit = Math.round(Number(existingRow.deposit_amount) * 100) / 100;
+    const nextBills = Math.round((Number(updates.bills ?? existingRow.proposed_bills) || 0) * 100) / 100;
+    const nextSavings = Math.round((Number(updates.savings ?? existingRow.proposed_savings) || 0) * 100) / 100;
+    const nextSpending =
+        updates.spending !== undefined
+            ? Math.round((Number(updates.spending) || 0) * 100) / 100
+            : Math.round((totalDeposit - nextBills - nextSavings) * 100) / 100;
+
+    if (nextBills < 0 || nextSavings < 0 || nextSpending < 0) {
+        const err = new Error("Allocated amounts cannot be negative.");
+        err.status = 400;
+        throw err;
+    }
+
+    const sum = Math.round((nextBills + nextSavings + nextSpending) * 100) / 100;
+    if (Math.abs(sum - totalDeposit) > 0.02) {
+        const err = new Error(
+            `Proposed split ($${sum.toFixed(2)}) must equal the deposit amount ($${totalDeposit.toFixed(2)}).`
+        );
+        err.status = 400;
+        throw err;
+    }
+
+    const summary = getFullWalletSummary(uid);
+    const proposedAfter = {
+        manualWallet: {
+            bills: Math.round((summary.manualWallet.bills + nextBills) * 100) / 100,
+            savings: Math.round((summary.manualWallet.savings + nextSavings) * 100) / 100,
+            spending: Math.round((summary.manualWallet.spending + nextSpending) * 100) / 100
+        },
+        bankBalances: summary.bankBalances,
+        combinedWallet: {
+            bills: Math.round((summary.combinedWallet.bills + nextBills) * 100) / 100,
+            savings: Math.round((summary.combinedWallet.savings + nextSavings) * 100) / 100,
+            spending: Math.round((summary.combinedWallet.spending + nextSpending) * 100) / 100,
+            total: Math.round((summary.combinedWallet.total + totalDeposit) * 100) / 100
+        }
+    };
+
+    const now = new Date().toISOString();
+    updateProposedAllocationStmt.run(
+        nextBills,
+        nextSavings,
+        nextSpending,
+        JSON.stringify(proposedAfter),
+        now,
+        uid,
+        allocId
+    );
+
+    return formatDepositAllocationRow(getDepositAllocationByIdStmt.get(uid, allocId));
+}
+
+function approveDepositAllocation(userId, id, customAmounts = null) {
+    const uid = Number(userId);
+    const allocId = Number(id);
+    if (customAmounts && (customAmounts.bills !== undefined || customAmounts.savings !== undefined || customAmounts.spending !== undefined)) {
+        updateProposedDepositAllocation(uid, allocId, customAmounts);
+    }
+
+    const existingRow = getDepositAllocationByIdStmt.get(uid, allocId);
+    if (!existingRow) {
+        const err = new Error("Deposit allocation not found.");
+        err.status = 404;
+        throw err;
+    }
+    if (existingRow.status === "approved") {
+        const err = new Error("This deposit allocation has already been approved.");
+        err.status = 400;
+        throw err;
+    }
+
+    const addBills = Math.round((Number(existingRow.proposed_bills) || 0) * 100) / 100;
+    const addSavings = Math.round((Number(existingRow.proposed_savings) || 0) * 100) / 100;
+    const addSpending = Math.round((Number(existingRow.proposed_spending) || 0) * 100) / 100;
+
+    // Apply approved split to the user's FundIQ Wallet
+    const currentWallet = getUserWallet(uid);
+    const updatedWallet = {
+        bills: Math.round((currentWallet.bills + addBills) * 100) / 100,
+        savings: Math.round((currentWallet.savings + addSavings) * 100) / 100,
+        spending: Math.round((currentWallet.spending + addSpending) * 100) / 100
+    };
+    setUserWallet(uid, updatedWallet);
+
+    const summaryAfter = getFullWalletSummary(uid);
+    const actualBalancesAfter = {
+        manualWallet: summaryAfter.manualWallet,
+        bankBalances: summaryAfter.bankBalances,
+        combinedWallet: summaryAfter.combinedWallet
+    };
+
+    const now = new Date().toISOString();
+    approveDepositAllocationStmt.run(
+        addBills,
+        addSavings,
+        addSpending,
+        addBills,
+        addSavings,
+        addSpending,
+        JSON.stringify(actualBalancesAfter),
+        now,
+        now,
+        uid,
+        allocId
+    );
+
+    return {
+        allocation: formatDepositAllocationRow(getDepositAllocationByIdStmt.get(uid, allocId)),
+        summary: summaryAfter
+    };
+}
+
+function rejectDepositAllocation(userId, id) {
+    const uid = Number(userId);
+    const allocId = Number(id);
+    const existingRow = getDepositAllocationByIdStmt.get(uid, allocId);
+    if (!existingRow) {
+        const err = new Error("Deposit allocation not found.");
+        err.status = 404;
+        throw err;
+    }
+    const now = new Date().toISOString();
+    rejectDepositAllocationStmt.run(now, uid, allocId);
+    return formatDepositAllocationRow(getDepositAllocationByIdStmt.get(uid, allocId));
+}
+
+// -----------------------------
+// TRUSTED FINANCIAL SOURCES (FTC, CFPB, FDIC, IRS, SEC, MyMoney.gov, Federal Reserve)
+// -----------------------------
+
+const DEFAULT_TRUSTED_SOURCES = [
+    {
+        source_key: "cfpb_budgeting_saving",
+        agency_name: "Consumer Financial Protection Bureau",
+        agency_short: "CFPB",
+        title: "CFPB Budgeting, Saving, and Managing Debt Resources",
+        url: "https://www.consumerfinance.gov/consumer-tools/",
+        topics_csv: "budget,budgeting,50/30/20,saving,savings,emergency fund,bills,debt,credit score,overdraft,bank account,checking,money sorter,spending",
+        summary_guidance: "The CFPB recommends prioritizing essential housing and utility bills first, building an emergency savings buffer for unexpected expenses, and tracking recurring automatic payments so you can cancel unused subscriptions and avoid overdraft fees."
+    },
+    {
+        source_key: "fdic_money_smart",
+        agency_name: "Federal Deposit Insurance Corporation",
+        agency_short: "FDIC",
+        title: "FDIC Money Smart & Deposit Insurance Education",
+        url: "https://www.fdic.gov/resources/consumers/money-smart/",
+        topics_csv: "fdic,deposit insurance,bank,savings account,checking account,interest,apy,safe banking,insured,emergency savings,deposit",
+        summary_guidance: "FDIC deposit insurance protects depositors up to $250,000 per insured bank for each account ownership category. FDIC Money Smart advises keeping emergency and bill funds in insured depository accounts and separating savings from everyday spending."
+    },
+    {
+        source_key: "ftc_consumer_advice",
+        agency_name: "Federal Trade Commission",
+        agency_short: "FTC",
+        title: "FTC Consumer Advice: Credit, Loans, Debt & Scam Prevention",
+        url: "https://consumer.ftc.gov/credit-loans-and-debt",
+        topics_csv: "ftc,scam,fraud,identity theft,credit report,free credit report,debt collection,phishing,security,privacy,loans",
+        summary_guidance: "The FTC advises consumers to guard personal banking credentials, never share one-time passcodes, monitor credit reports regularly at AnnualCreditReport.com, and verify payment requests before authorizing money transfers."
+    },
+    {
+        source_key: "irs_tax_withholding",
+        agency_name: "Internal Revenue Service",
+        agency_short: "IRS",
+        title: "IRS Tax Information for Individuals & Withholding Estimator",
+        url: "https://www.irs.gov/individuals",
+        topics_csv: "irs,tax,taxes,refund,withholding,w-4,1099,deduction,ira,roth,retirement tax,income tax,paycheck",
+        summary_guidance: "The IRS provides official guidance on paycheck tax withholding, individual tax credits, and tax-advantaged retirement accounts. Adjusting tax withholding or setting aside a percentage of freelance/1099 deposits helps prevent unexpected tax bills."
+    },
+    {
+        source_key: "sec_investor_gov",
+        agency_name: "U.S. Securities and Exchange Commission",
+        agency_short: "SEC",
+        title: "SEC Investor.gov: Investing Basics, Compound Interest & Fees",
+        url: "https://www.investor.gov/introduction-investing",
+        topics_csv: "sec,invest,investing,stocks,bonds,index fund,etf,compound interest,retirement,401k,portfolio,risk,fees",
+        summary_guidance: "Through Investor.gov, the SEC recommends paying off high-interest debt and establishing an emergency savings fund before investing, diversifying across asset classes, understanding investment fees, and researching registered financial professionals."
+    },
+    {
+        source_key: "mymoney_gov_five_principles",
+        agency_name: "Federal Financial Literacy and Education Commission",
+        agency_short: "MyMoney.gov",
+        title: "MyMoney.gov: The Building Blocks of Managing Your Finances (Earn, Save & Invest, Protect, Spend, Borrow)",
+        url: "https://www.mymoney.gov/",
+        topics_csv: "mymoney,financial literacy,earn,save,spend,borrow,protect,goals,paycheck,plan,allocation,organize",
+        summary_guidance: "MyMoney.gov outlines five federal financial building blocks: Earn (understand your paycheck), Save & Invest (pay yourself first into savings), Protect (maintain emergency reserves and insurance), Spend (plan bills vs. discretionary spending), and Borrow wisely."
+    }
+];
+
+const upsertTrustedSourceStmt = db.prepare(`
+    INSERT INTO trusted_financial_sources (
+        source_key, agency_name, agency_short, title, url, topics_csv, summary_guidance, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(source_key) DO UPDATE SET
+        agency_name = excluded.agency_name,
+        agency_short = excluded.agency_short,
+        title = excluded.title,
+        url = excluded.url,
+        topics_csv = excluded.topics_csv,
+        summary_guidance = excluded.summary_guidance
+`);
+
+const getAllTrustedSourcesStmt = db.prepare(`
+    SELECT * FROM trusted_financial_sources ORDER BY id ASC
+`);
+
+(function seedTrustedSources() {
+    try {
+        const now = new Date().toISOString();
+        for (const src of DEFAULT_TRUSTED_SOURCES) {
+            upsertTrustedSourceStmt.run(
+                src.source_key,
+                src.agency_name,
+                src.agency_short,
+                src.title,
+                src.url,
+                src.topics_csv,
+                src.summary_guidance,
+                now
+            );
+        }
+    } catch (e) {
+        console.warn("Seed trusted financial sources warning:", e.message);
+    }
+})();
+
+function getTrustedFinancialSources() {
+    const rows = getAllTrustedSourcesStmt.all() || [];
+    return rows.map((r) => ({
+        id: r.id,
+        sourceKey: r.source_key,
+        agencyName: r.agency_name,
+        agencyShort: r.agency_short,
+        title: r.title,
+        url: r.url,
+        topics: String(r.topics_csv || "").split(",").map((t) => t.trim()).filter(Boolean),
+        summaryGuidance: r.summary_guidance
+    }));
+}
+
+function searchTrustedFinancialSources(queryText = "", limit = 3) {
+    const all = getTrustedFinancialSources();
+    const q = String(queryText || "").toLowerCase();
+    if (!q) return all.slice(0, limit);
+
+    const scored = all.map((src) => {
+        let score = 0;
+        if (q.includes(src.agencyShort.toLowerCase()) || q.includes(src.agencyName.toLowerCase())) {
+            score += 10;
+        }
+        for (const topic of src.topics) {
+            if (q.includes(topic.toLowerCase())) {
+                score += 4;
+            } else {
+                const words = topic.toLowerCase().split(/\s+/);
+                if (words.some((w) => w.length >= 4 && q.includes(w))) {
+                    score += 2;
+                }
+            }
+        }
+        return { src, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const matched = scored.filter((item) => item.score > 0).map((item) => item.src);
+    if (matched.length > 0) {
+        return matched.slice(0, limit);
+    }
+    // Default to CFPB + FDIC + MyMoney.gov for general financial questions
+    return all.filter((s) => ["CFPB", "FDIC", "MyMoney.gov"].includes(s.agencyShort)).slice(0, limit);
 }
 
 module.exports = {
@@ -2289,6 +3210,21 @@ module.exports = {
     findEmailNotificationByEventKey,
     recordEmailNotification,
     getUserEmailNotifications,
+    recordNotificationDeliveryHistory,
+    getNotificationDeliveryHistoryByUser,
+    saveWeeklyFinancialReport,
+    getWeeklyFinancialReportByWeek,
+    getWeeklyFinancialReportsByUser,
+    getAiFinancialInsightsByUser,
+    createDepositAllocation,
+    getDepositAllocationsByUser,
+    getDepositAllocationById,
+    markDepositAllocationNotified,
+    updateProposedDepositAllocation,
+    approveDepositAllocation,
+    rejectDepositAllocation,
+    getTrustedFinancialSources,
+    searchTrustedFinancialSources,
     getAllUsers
 };
 

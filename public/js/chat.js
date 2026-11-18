@@ -57,10 +57,10 @@
 
     // Suggested prompts
     const DEFAULT_PROMPTS = [
-        "How does the Money Sorter work?",
-        "What are the 3 money categories?",
-        "How do I add money to my Wallet?",
-        "Can FundIQ help me save for a goal?"
+        "How does FDIC deposit insurance protect my savings?",
+        "What does the CFPB recommend for budgeting & bills?",
+        "How does FundIQ's AI Money Sorter allocate deposits?",
+        "What are SEC and IRS tips for saving & taxes?"
     ];
 
     /**
@@ -73,14 +73,23 @@
     }
 
     /**
-     * Simple markdown-to-HTML parser (bold, bullet points, line breaks)
+     * Markdown-to-HTML parser supporting bold, italic, bullet points, and clickable trusted source links [Title](https://...)
      */
     function formatMessageText(text) {
         if (!text) return "";
         let formatted = escapeHtml(text);
 
+        // Clickable markdown links: [label](https://...)
+        formatted = formatted.replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+            '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#5B21B6; font-weight:700; text-decoration:underline;">$1</a>'
+        );
+
         // Bold **text**
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+        // Italic *text*
+        formatted = formatted.replace(/(^|\s)\*([^*]+)\*(?=\s|$|\.)/g, "$1<em>$2</em>");
 
         // Simple bullet points (- item or * item)
         formatted = formatted.replace(/(?:^|\n)[-*]\s+(.*)/g, "<br>• $1");

@@ -208,44 +208,56 @@
 
 .cal-event-pill {
     width: 100%;
-    background: #F3E8FF;
-    border-left: 2.5px solid #7C3AED;
-    border-radius: 4px;
-    padding: 3px 5px;
+    background: #C4B5FD;
+    border-left: 3px solid #5B21B6;
+    border-radius: 5px;
+    padding: 4px 6px;
     display: flex;
     flex-direction: column;
     gap: 1px;
     text-align: left;
+    color: #000000;
+}
+
+.cal-event-pill.bills {
+    background: #C4B5FD;
+    border-left-color: #4C1D95;
+    color: #000000;
 }
 
 .cal-event-pill.savings {
-    background: #F3F4F6;
+    background: #E5E7EB;
     border-left-color: #111827;
+    color: #000000;
 }
 
 .cal-event-pill.spending {
-    background: #F5F3FF;
-    border-left-color: #A78BFA;
+    background: #DDD6FE;
+    border-left-color: #6D28D9;
+    color: #000000;
 }
 
 .cal-event-pill.paid {
-    opacity: 0.55;
+    opacity: 0.65;
     text-decoration: line-through;
+    color: #000000;
 }
 
-.cal-pill-title {
-    font-size: 9.5px;
-    font-weight: 600;
-    color: #1F2937;
+.cal-pill-title,
+.cal-event-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #000000 !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.cal-pill-amt {
-    font-size: 9px;
+.cal-pill-amt,
+.cal-event-amt {
+    font-size: 9.5px;
     font-weight: 700;
-    color: #4B5563;
+    color: #000000 !important;
 }
 
 .cal-more-pill {
@@ -302,11 +314,32 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
-    background: #F9FAFB;
+    padding: 9px 12px;
+    background: #DDD6FE;
+    border-left: 3px solid #5B21B6;
     border-radius: 8px;
     font-size: 12.5px;
-    border: 1px solid #E5E7EB;
+    border-top: 1px solid #C4B5FD;
+    border-right: 1px solid #C4B5FD;
+    border-bottom: 1px solid #C4B5FD;
+    color: #000000;
+}
+
+.date-payment-item.cat-bills {
+    background: #C4B5FD;
+    border-left-color: #4C1D95;
+}
+
+.date-payment-title,
+.date-payment-amt,
+.date-payment-desc {
+    color: #000000 !important;
+}
+
+.date-payment-desc {
+    font-size: 11px;
+    font-weight: 500;
+    margin-top: 2px;
 }
 
 /* Calendar Legend Footer */
@@ -429,19 +462,27 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 13px 4px;
-    background: #FFFFFF;
-    border-bottom: 1px solid #F3F4F6;
+    padding: 12px 10px;
+    background: #EDE9FE;
+    border-left: 3px solid #5B21B6;
+    border-radius: 8px;
+    margin-bottom: 6px;
     gap: 10px;
+    color: #000000;
+}
+
+.payment-card-item.cat-bills {
+    background: #C4B5FD;
+    border-left-color: #4C1D95;
 }
 
 .payment-card-item.is-completed {
-    opacity: 0.65;
+    opacity: 0.72;
 }
 
 .payment-card-item.is-completed .payment-title {
     text-decoration: line-through;
-    color: #9CA3AF;
+    color: #000000;
 }
 
 .payment-info-group {
@@ -520,7 +561,7 @@
 .payment-title {
     font-size: 13.5px;
     font-weight: 700;
-    color: #111827;
+    color: #000000 !important;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -533,7 +574,8 @@
     gap: 6px;
     margin-top: 2px;
     font-size: 11.5px;
-    color: #6B7280;
+    font-weight: 500;
+    color: #000000 !important;
 }
 
 .cat-dot {
@@ -852,9 +894,9 @@
 
 /* Predicted recurring bill styles */
 .cal-event-pill.is-predicted {
-    border: 1px dashed #8B5CF6;
-    background: #F5F3FF;
-    color: #5B21B6;
+    border: 1.5px dashed #4C1D95;
+    background: #C4B5FD;
+    color: #000000;
 }
 
 .badge-tag.predicted {
@@ -865,7 +907,7 @@
     border-radius: 999px;
     font-size: 10px;
     font-weight: 700;
-    background: #F3E8FF;
-    color: #6D28D9;
-    border: 1px dashed #A78BFA;
+    background: #C4B5FD;
+    color: #000000;
+    border: 1px dashed #4C1D95;
 }
